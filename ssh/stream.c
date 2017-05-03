@@ -60,15 +60,9 @@ int ssh_stream_set_cipher(struct SSH_STREAM *stream, enum SSH_CIPHER_TYPE type, 
 int ssh_stream_set_mac(struct SSH_STREAM *stream, enum SSH_MAC_TYPE type, struct SSH_STRING *key)
 {
   int mac_len;
-  enum SSH_MAC_MODE mac_mode;
-
-  //  dump_mem("stream
   
   mac_len = ssh_mac_get_len(type);
   if (mac_len < 0)
-    return -1;
-  mac_mode = ssh_mac_get_mode(type);
-  if (mac_mode == SSH_MAC_INVALID_MODE)
     return -1;
 
   if (stream->mac_ctx != NULL)
@@ -77,7 +71,6 @@ int ssh_stream_set_mac(struct SSH_STREAM *stream, enum SSH_MAC_TYPE type, struct
     return -1;
   
   stream->mac_type = type;
-  stream->mac_mode = mac_mode;
   stream->mac_len = mac_len;
   ssh_str_free(key);
   return 0;
@@ -139,14 +132,13 @@ static int finish_packet(struct SSH_STREAM *stream)
 
   // write mac past end of packet
   if (stream->mac_type != SSH_MAC_NONE) {
-    struct SSH_BUFFER *read_pack = (stream->mac_mode == SSH_MAC_MAC_THEN_ENCRYPT) ? &stream->pack : &stream->pack_enc;
     struct SSH_BUFFER *write_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->pack_enc;
     if (ssh_buf_grow(write_pack, stream->mac_len) < 0)  // only grow buffer, don't change its nominal length
       return -1;
 
     // calculate MAC
     //memset(write_pack->data + write_pack->len, 0, stream->mac_len);
-    if (ssh_mac_compute(stream->mac_ctx, write_pack->data + write_pack->len, stream->seq_num, read_pack->data, read_pack->len) < 0)
+    if (ssh_mac_compute(stream->mac_ctx, write_pack->data + write_pack->len, stream->seq_num, stream->pack.data, stream->pack.len) < 0)
       return -1;
   }
 
@@ -195,24 +187,14 @@ static int verify_read_packet(struct SSH_STREAM *stream)
   // check mac
   if (stream->mac_type != SSH_MAC_NONE) {
     uint8_t digest[SSH_HASH_MAX_LEN];
-    struct SSH_BUFFER *read_pack = (stream->mac_mode == SSH_MAC_MAC_THEN_ENCRYPT) ? &stream->pack : &stream->pack_enc;
 
-#if 0
-    if (stream->mac_mode == SSH_MAC_MAC_THEN_ENCRYPT) {
-      ssh_log("**** MACing plaintext packet\n");
-      dump_mem("plaintext to dump", read_pack->data, read_pack->len);
-    } else {
-      ssh_log("**** MACing ciphertext packet\n");
-    }
-#endif
-    
     // verify MAC
-    memset(digest, 0xff, sizeof(digest));
-    if (ssh_mac_compute(stream->mac_ctx, digest, stream->seq_num, read_pack->data, read_pack->len) < 0)
+    //memset(digest, 0xff, sizeof(digest));
+    if (ssh_mac_compute(stream->mac_ctx, digest, stream->seq_num, stream->pack.data, stream->pack.len) < 0)
       return -1;
-    if (memcmp(digest, read_pack->data + read_pack->len, stream->mac_len) != 0) {  // [TODO: prevent timing attack]
+    if (memcmp(digest, stream->pack.data + stream->pack.len, stream->mac_len) != 0) {  // [TODO: prevent timing attack]
       ssh_log("input packet has bad MAC:\n");
-      dump_mem("received MAC", read_pack->data + read_pack->len, stream->mac_len);
+      dump_mem("received MAC", stream->pack.data + stream->pack.len, stream->mac_len);
       dump_mem("computed MAC", digest, stream->mac_len);
       ssh_set_error("bad mac in incoming packet");
       return -1;

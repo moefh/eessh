@@ -26,7 +26,6 @@ static const struct MAC_ALGO {
   enum SSH_HASH_TYPE hash_type;
 
   uint32_t len;
-  enum SSH_MAC_MODE mode;
 
   func_hash_single hash_single;
   func_hash_new hash_new;
@@ -35,8 +34,8 @@ static const struct MAC_ALGO {
   func_hash_update hash_update;
   func_hash_final hash_final;
 } mac_algos[] = {
-  { "hmac-sha2-256", SSH_MAC_HMAC_SHA2_256, SSH_HASH_SHA2_256, 32, SSH_MAC_MAC_THEN_ENCRYPT, LIST_HASH_FUNCS(sha2) },
-  { "hmac-sha2-512", SSH_MAC_HMAC_SHA2_512, SSH_HASH_SHA2_512, 64, SSH_MAC_MAC_THEN_ENCRYPT, LIST_HASH_FUNCS(sha2) },
+  { "hmac-sha2-256", SSH_MAC_HMAC_SHA2_256, SSH_HASH_SHA2_256, 32, LIST_HASH_FUNCS(sha2) },
+  { "hmac-sha2-512", SSH_MAC_HMAC_SHA2_512, SSH_HASH_SHA2_512, 64, LIST_HASH_FUNCS(sha2) },
 };
 
 struct SSH_MAC_CTX {
@@ -82,14 +81,6 @@ int ssh_mac_get_len(enum SSH_MAC_TYPE type)
   if (algo == NULL)
     return -1;
   return algo->len;
-}
-
-enum SSH_MAC_MODE ssh_mac_get_mode(enum SSH_MAC_TYPE type)
-{
-  const struct MAC_ALGO *algo = mac_get_algo(type);
-  if (algo == NULL)
-    return -1;
-  return algo->mode;
 }
 
 static int mac_set_key(struct SSH_MAC_CTX *mac, const struct SSH_STRING *key)

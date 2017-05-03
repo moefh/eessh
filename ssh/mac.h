@@ -16,20 +16,12 @@ enum SSH_MAC_TYPE {
   SSH_MAC_INVALID
 };
 
-enum SSH_MAC_MODE {
-  SSH_MAC_MAC_THEN_ENCRYPT,
-  SSH_MAC_ENCRYPT_THEN_MAC,
-
-  SSH_MAC_INVALID_MODE
-};
-
 struct SSH_MAC_CTX;
 
 enum SSH_MAC_TYPE ssh_mac_get_by_name(const char *name);
 enum SSH_MAC_TYPE ssh_mac_get_by_name_n(const uint8_t *name, size_t name_len);
 
 int ssh_mac_get_len(enum SSH_MAC_TYPE type);
-enum SSH_MAC_MODE ssh_mac_get_mode(enum SSH_MAC_TYPE type);
 
 struct SSH_MAC_CTX *ssh_mac_new(enum SSH_MAC_TYPE type, const struct SSH_STRING *key);
 void ssh_mac_free(struct SSH_MAC_CTX *mac);

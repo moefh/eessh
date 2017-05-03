@@ -20,7 +20,6 @@ struct SSH_STREAM {
   uint32_t cipher_block_len;
 
   enum SSH_MAC_TYPE mac_type;
-  enum SSH_MAC_MODE mac_mode;
   struct SSH_MAC_CTX *mac_ctx;
   uint32_t mac_len;
 };
