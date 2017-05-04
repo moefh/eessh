@@ -26,6 +26,7 @@ struct SSH_CONN {
   struct SSH_STRING session_id;
   struct SSH_STREAM in_stream;
   struct SSH_STREAM out_stream;
+  struct SSH_BUF_READER last_pack_read;
 };
 
 static struct SSH_CONN *conn_new(void)
@@ -302,7 +303,10 @@ struct SSH_BUF_READER *ssh_conn_recv_packet(struct SSH_CONN *conn)
 {
   if (ssh_stream_recv_packet(&conn->in_stream, conn->sock) < 0)
     return NULL;
-  return &conn->in_stream.pack_read;
+  conn->last_pack_read = ssh_buf_reader_new_from_buffer(&conn->in_stream.pack);
+  ssh_buf_read_u32(&conn->last_pack_read, NULL);  // skip packet length
+  ssh_buf_read_u8(&conn->last_pack_read, NULL);   // skip padding length
+  return &conn->last_pack_read;
 }
 
 struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn)

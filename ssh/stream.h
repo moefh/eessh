@@ -12,8 +12,8 @@
 struct SSH_STREAM {
   uint32_t seq_num;
   struct SSH_BUFFER pack;
-  struct SSH_BUF_READER pack_read;
   struct SSH_BUFFER pack_enc;
+  struct SSH_BUFFER net_buffer;
   
   enum SSH_CIPHER_TYPE cipher_type;
   struct SSH_CIPHER_CTX *cipher_ctx;

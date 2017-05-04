@@ -13,7 +13,7 @@
 /* check if 'a + b' doesn't overflow, if ok store the result in *ret */
 static int checked_add(size_t *ret, size_t a, size_t b)
 {
-  if (a + b < a || a + b < b) {
+  if (a + b < a) {
     ssh_set_error("buffer size too large");
     return -1;
   }
@@ -308,6 +308,21 @@ int ssh_buf_append_buffer(struct SSH_BUFFER *buf, const struct SSH_BUFFER *val)
 int ssh_buf_append_buf_reader(struct SSH_BUFFER *buf, const struct SSH_BUF_READER *val)
 {
   return ssh_buf_append_data(buf, val->data, val->len);
+}
+
+int ssh_buf_remove_data(struct SSH_BUFFER *buf, size_t offset, size_t len)
+{
+  size_t end;
+  
+  if (checked_add(&end, offset, len) < 0
+      || buf->len < end) {
+    ssh_set_error("trying to remove data outside buffer");
+    return -1;
+  }
+  if (buf->len > end)
+    memmove(buf->data + offset, buf->data + end, buf->len - end);
+  buf->len -= len;
+  return 0;
 }
 
 /* --------------------------------------------------------------------- */

@@ -54,6 +54,7 @@ int ssh_buf_append_cstring_n(struct SSH_BUFFER *buf, const char *val, size_t len
 int ssh_buf_append_string(struct SSH_BUFFER *buf, const struct SSH_STRING *val);
 int ssh_buf_append_buffer(struct SSH_BUFFER *buf, const struct SSH_BUFFER *val);
 int ssh_buf_append_buf_reader(struct SSH_BUFFER *buf, const struct SSH_BUF_READER *val);
+int ssh_buf_remove_data(struct SSH_BUFFER *buf, size_t offset, size_t len);
 
 struct SSH_BUF_READER ssh_buf_reader_new(uint8_t *data, size_t len);
 struct SSH_BUF_READER ssh_buf_reader_new_from_buffer(struct SSH_BUFFER *buf);

@@ -23,16 +23,20 @@
 MAKE_BUFFER_DUMPER(dump_packet)
 void dump_packet_reader(const char *label, struct SSH_BUF_READER *buf, uint32_t mac_len)
 {
+  uint32_t pack_len;
   int payload_len, pad_len;
 
+  pack_len = ssh_buf_get_u32(buf->data);
   pad_len = (buf->len >= 5) ? buf->data[4] : -1;
   payload_len = (int) buf->len - pad_len - 5;
-  
+
   ssh_log("------------------------------------------------------------------------\n");
   ssh_log("--- %s\n", label);
+  if (pack_len != buf->len-4)
+    ssh_log("!!!! WARNING: packet len differs from what buffer len contains (%u != %u)\n", pack_len, (unsigned int) buf->len - 4);
   ssh_log("- packet_length     %u\n", (unsigned int) buf->len);
   ssh_log("- padding_length    %d\n", pad_len);
-  ssh_log("- message           %s\n", (payload_len > 0) ? ssh_const_get_msg_name(buf->data[5]) : "--");
+  ssh_log("- message           %s (%u)\n", (payload_len > 0) ? ssh_const_get_msg_name(buf->data[5]) : "--", (payload_len > 0) ? buf->data[5] : 0);
   if (payload_len > 0)
     dump_mem("- payload", buf->data + 5, payload_len);
   if (pad_len > 0)
@@ -94,4 +98,54 @@ void dump_kexinit_packet_reader(const char *label, struct SSH_BUF_READER *pack, 
   ssh_log("- first_kex_packet_follows: %d\n", first_kex_packet_follows);
   ssh_log("- reserved:                 %d\n", reserved);
   ssh_log("------------------------------------------------------------------------\n");
+}
+
+/*
+ * Insert a plain-text (no encryption or MAC) packet in the given buffer
+ */
+int debug_gen_packet(struct SSH_BUFFER *buf, uint8_t type, uint8_t *payload, size_t payload_len)
+{
+  uint8_t pad_len, i;
+  size_t start_len;
+
+  start_len = buf->len;
+  
+  // data
+  if (ssh_buf_write_u32(buf, 0)
+      || ssh_buf_write_u8(buf, 0) < 0
+      || ssh_buf_write_u8(buf, type) < 0
+      || ssh_buf_append_data(buf, payload, payload_len) < 0)
+    return -1;
+
+  // padding
+  pad_len = 8 - (buf->len-start_len) % 8;
+  if (pad_len < 4)
+    pad_len += 8;
+  for (i = pad_len; i > 0; i--)
+    if (ssh_buf_append_data(buf, &i, 1) < 0)
+      return -1;
+
+  // fix lengths
+  ssh_buf_set_u32(buf->data + start_len, buf->len-start_len - 4);
+  buf->data[start_len + 4] = pad_len;
+
+  dump_mem("generated packet", buf->data + start_len, buf->len - start_len);
+  
+  return 0;
+}
+
+int debug_gen_string_packet(struct SSH_BUFFER *buf, uint8_t type, char *str)
+{
+  uint8_t data[1024];
+  size_t str_len;
+
+  str_len = strlen(str);
+  if (4 + str_len > sizeof(data)) {
+    ssh_set_error("string too large");
+    return -1;
+  }
+  ssh_buf_set_u32(data, str_len);
+  memcpy(data + 4, str, str_len);
+
+  return debug_gen_packet(buf, type, data, 4 + str_len);
 }
