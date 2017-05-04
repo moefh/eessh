@@ -169,9 +169,6 @@ static int verify_read_packet(struct SSH_STREAM *stream)
 {
   uint8_t block_len;
 
-  dump_packet("verifying packet", &stream->pack, 0);
-  dump_mem("verifying packet mem", stream->pack.data, stream->pack.len);
-  
   // check padding
   if (stream->pack.data[4] < 4 || stream->pack.data[4] > stream->pack.len-5) {
     ssh_set_error("bad padding length: packet_length=%d, pad_length=%d", (int) stream->pack.len-4, stream->pack.data[4]);
