@@ -235,75 +235,45 @@ static int gen_key(struct SSH_STRING *ret_key, uint32_t gen_key_len, uint8_t key
 
 static int kex_generate_keys(struct SSH_CONN *conn, struct SSH_KEX *kex)
 {
-  struct SSH_STRING iv_cts = ssh_str_new_empty();
-  struct SSH_STRING iv_stc = ssh_str_new_empty();
+  struct SSH_STRING cipher_iv_cts = ssh_str_new_empty();
+  struct SSH_STRING cipher_iv_stc = ssh_str_new_empty();
   struct SSH_STRING cipher_key_cts = ssh_str_new_empty();
   struct SSH_STRING cipher_key_stc = ssh_str_new_empty();
   struct SSH_STRING mac_key_cts = ssh_str_new_empty();
   struct SSH_STRING mac_key_stc = ssh_str_new_empty();
-  enum SSH_CIPHER_TYPE cipher_type_cts;
-  enum SSH_CIPHER_TYPE cipher_type_stc;
-  enum SSH_MAC_TYPE mac_type_cts;
-  enum SSH_MAC_TYPE mac_type_stc;
-  uint32_t max_key_len;
-  int key_lens[6];
-  int i, ret;
+  int cipher_iv_cts_len, cipher_iv_stc_len;
+  int cipher_key_cts_len, cipher_key_stc_len;
+  int mac_key_cts_len, mac_key_stc_len;
+  int ret;
   
   ssh_log("* computing encryption and integrity keys\n");
 
-  // TODO: choose cipher and MAC according to KEXINIT messages
-  // (saved in conn->client_kexinit and conn->server_kexinit)
-  cipher_type_cts = cipher_type_stc = ssh_cipher_get_by_name(encryption_algo_cts);
-  mac_type_cts = mac_type_stc = ssh_mac_get_by_name(mac_algo_cts);
-
-  if (cipher_type_cts == SSH_CIPHER_INVALID || cipher_type_stc == SSH_CIPHER_INVALID
-      || mac_type_cts == SSH_MAC_INVALID || mac_type_stc == SSH_MAC_INVALID) {
-    ssh_set_error("no algorithms shared with server");
+  if ((cipher_iv_cts_len = ssh_cipher_get_iv_len(kex->cipher_type_cts)) < 0
+      || (cipher_iv_stc_len = ssh_cipher_get_iv_len(kex->cipher_type_stc)) < 0
+      || (cipher_key_cts_len = ssh_cipher_get_key_len(kex->cipher_type_cts)) < 0
+      || (cipher_key_stc_len = ssh_cipher_get_key_len(kex->cipher_type_stc)) < 0
+      || (mac_key_cts_len = ssh_mac_get_len(kex->mac_type_cts)) < 0
+      || (mac_key_stc_len = ssh_mac_get_len(kex->mac_type_stc)) < 0)
     return -1;
-  }
-  
-  // compute max_key_len as the maximum key length of all IVs/ciphers keys/MAC keys
-  key_lens[0] = ssh_cipher_get_iv_len(cipher_type_cts);
-  key_lens[1] = ssh_cipher_get_iv_len(cipher_type_stc);
-  key_lens[2] = ssh_cipher_get_key_len(cipher_type_cts);
-  key_lens[3] = ssh_cipher_get_key_len(cipher_type_stc);
-  key_lens[4] = ssh_mac_get_len(mac_type_cts);
-  key_lens[5] = ssh_mac_get_len(mac_type_stc);
-  max_key_len = 0;
-  for (i = 0; i < sizeof(key_lens)/sizeof(key_lens[0]); i++) {
-    if (key_lens[i] < 0) {
-      ssh_set_error("invalid key size selected");
-      return -1;
-    }
-    if (max_key_len < key_lens[i])
-      max_key_len = key_lens[i];
-  }
 
-  //dump_mem(conn->shared_secret.str, conn->shared_secret.len, "shared secret");
-  //dump_mem(conn->exchange_hash.str, conn->exchange_hash.len, "exchange hash");
-  //dump_mem(conn->session_id.str, conn->session_id.len, "session_id");
-  //ssh_log("============================================================================\n");
-  //ssh_log("============================================================================\n");
-  //ssh_log("============================================================================\n");
-  
-  if (gen_key(&iv_cts, max_key_len, 'A', conn, kex) < 0
-      || gen_key(&iv_stc, max_key_len, 'B', conn, kex) < 0
-      || gen_key(&cipher_key_cts, max_key_len, 'C', conn, kex) < 0
-      || gen_key(&cipher_key_stc, max_key_len, 'D', conn, kex) < 0
-      || gen_key(&mac_key_cts, max_key_len, 'E', conn, kex) < 0
-      || gen_key(&mac_key_stc, max_key_len, 'F', conn, kex) < 0
-      || ssh_conn_set_cipher(conn, SSH_CONN_CTS, cipher_type_cts, &iv_cts, &cipher_key_cts) < 0
-      || ssh_conn_set_cipher(conn, SSH_CONN_STC, cipher_type_stc, &iv_stc, &cipher_key_stc) < 0
-      || ssh_conn_set_mac(conn, SSH_CONN_CTS, mac_type_cts, &mac_key_cts) < 0
-      || ssh_conn_set_mac(conn, SSH_CONN_STC, mac_type_stc, &mac_key_stc) < 0)
+  if (gen_key(&cipher_iv_cts, cipher_iv_cts_len, 'A', conn, kex) < 0
+      || gen_key(&cipher_iv_stc, cipher_iv_stc_len, 'B', conn, kex) < 0
+      || gen_key(&cipher_key_cts, cipher_key_cts_len, 'C', conn, kex) < 0
+      || gen_key(&cipher_key_stc, cipher_key_stc_len, 'D', conn, kex) < 0
+      || gen_key(&mac_key_cts, mac_key_cts_len, 'E', conn, kex) < 0
+      || gen_key(&mac_key_stc, mac_key_stc_len, 'F', conn, kex) < 0
+      || ssh_conn_set_cipher(conn, SSH_CONN_CTS, kex->cipher_type_cts, &cipher_iv_cts, &cipher_key_cts) < 0
+      || ssh_conn_set_cipher(conn, SSH_CONN_STC, kex->cipher_type_stc, &cipher_iv_stc, &cipher_key_stc) < 0
+      || ssh_conn_set_mac(conn, SSH_CONN_CTS, kex->mac_type_cts, &mac_key_cts) < 0
+      || ssh_conn_set_mac(conn, SSH_CONN_STC, kex->mac_type_stc, &mac_key_stc) < 0)
     ret = -1;
-  else
+  else {
     ret = 0;
+    ssh_log("* keys set\n");
+  }
 
-  ssh_log("* keys set\n");
-
-  ssh_str_free(&iv_cts);
-  ssh_str_free(&iv_stc);
+  ssh_str_free(&cipher_iv_cts);
+  ssh_str_free(&cipher_iv_stc);
   ssh_str_free(&cipher_key_cts);
   ssh_str_free(&cipher_key_stc);
   ssh_str_free(&mac_key_cts);
@@ -320,9 +290,14 @@ static int ssh_kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
     return -1;
 
   // TODO: choose algorithm based on client and server lists in KEX_INIT packets
-  kex->type = ssh_kex_get_by_name(kex_algo);
-  if (kex->type == SSH_KEX_INVALID)
+  if ((kex->type = ssh_kex_get_by_name(kex_algo)) == SSH_KEX_INVALID
+      || (kex->cipher_type_cts = ssh_cipher_get_by_name(encryption_algo_cts)) == SSH_CIPHER_INVALID
+      || (kex->cipher_type_stc = ssh_cipher_get_by_name(encryption_algo_stc)) == SSH_CIPHER_INVALID
+      || (kex->mac_type_cts = ssh_mac_get_by_name(mac_algo_cts)) == SSH_MAC_INVALID
+      || (kex->mac_type_stc = ssh_mac_get_by_name(mac_algo_stc)) == SSH_MAC_INVALID) {
+    ssh_set_error("no algorithms shared with server");
     return -1;
+  }
 
   if ((algo = kex_get_algo(kex->type)) == NULL)
     return -1;

@@ -83,7 +83,7 @@ int ssh_cipher_get_iv_len(enum SSH_CIPHER_TYPE type)
   const struct CIPHER_ALGO *algo = cipher_get_algo(type);
   if (algo == NULL)
     return -1;
-  return algo->iv_len;
+  return algo->key_len;
 }
 
 struct SSH_CIPHER_CTX *ssh_cipher_new(enum SSH_CIPHER_TYPE type, enum SSH_CIPHER_DIRECTION dir, const struct SSH_STRING *iv, const struct SSH_STRING *key)

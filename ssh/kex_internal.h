@@ -10,6 +10,10 @@
 struct SSH_KEX {
   enum SSH_KEX_TYPE type;
   enum SSH_HASH_TYPE hash_type;
+  enum SSH_CIPHER_TYPE cipher_type_cts;
+  enum SSH_CIPHER_TYPE cipher_type_stc;
+  enum SSH_MAC_TYPE mac_type_cts;
+  enum SSH_MAC_TYPE mac_type_stc;
   struct SSH_STRING shared_secret;
   struct SSH_STRING exchange_hash;
   struct SSH_BUFFER server_kexinit;

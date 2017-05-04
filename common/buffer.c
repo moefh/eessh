@@ -98,7 +98,7 @@ int ssh_str_dup_string(struct SSH_STRING *new_str, const struct SSH_STRING *str)
 
 void ssh_str_free(struct SSH_STRING *str)
 {
-  if (str->len > 0)
+  if (str->str != NULL && str->len > 0)
     memset(str->str, 0, str->len);
   ssh_free(str->str);
   str->str = NULL;
