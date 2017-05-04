@@ -20,7 +20,7 @@ enum SSH_CONN_DIRECTION {
 struct SSH_CONN *ssh_conn_open(const char *server, const char *port);
 void ssh_conn_close(struct SSH_CONN *conn);
 
-struct SSH_HOST_BANNER *ssh_conn_get_server_banner(struct SSH_CONN *conn);
+struct SSH_VERSION_STRING *ssh_conn_get_server_version_string(struct SSH_CONN *conn);
 void ssh_conn_set_session_id(struct SSH_CONN *conn, struct SSH_STRING *session_id);
 struct SSH_STRING *ssh_conn_get_session_id(struct SSH_CONN *conn);
 struct SSH_STRING *ssh_conn_get_session_id(struct SSH_CONN *conn);
@@ -33,6 +33,6 @@ int ssh_conn_send_packet(struct SSH_CONN *conn);
 struct SSH_BUF_READER *ssh_conn_recv_packet(struct SSH_CONN *conn);
 struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn);
 
-extern const char ssh_client_banner_string[];
+extern const char ssh_client_version_string[];
 
 #endif /* CONNECTION_H_FILE */

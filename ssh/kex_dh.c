@@ -127,14 +127,14 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
   struct SSH_BUFFER data;
   struct SSH_STRING data_str;
   struct SSH_STRING hash;
-  struct SSH_HOST_BANNER *server_banner;
+  struct SSH_VERSION_STRING *server_version;
   uint8_t hash_data[SSH_HASH_MAX_LEN];
 
-  server_banner = ssh_conn_get_server_banner(conn);
+  server_version = ssh_conn_get_server_version_string(conn);
   
   data = ssh_buf_new();
-  if (ssh_buf_write_cstring_n(&data, ssh_client_banner_string, strlen(ssh_client_banner_string)-2) < 0
-      || ssh_buf_write_cstring_n(&data, (char *) server_banner->buf, server_banner->len) < 0
+  if (ssh_buf_write_cstring_n(&data, ssh_client_version_string, strlen(ssh_client_version_string)-2) < 0
+      || ssh_buf_write_cstring_n(&data, (char *) server_version->buf, server_version->len) < 0
       || ssh_buf_write_buffer(&data, &kex->client_kexinit) < 0
       || ssh_buf_write_buffer(&data, &kex->server_kexinit) < 0
       || ssh_buf_write_string(&data, server_host_key) < 0

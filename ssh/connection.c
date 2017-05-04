@@ -18,11 +18,11 @@
 #include "ssh/banner.h"
 #include "ssh/kex.h"
 
-const char ssh_client_banner_string[] = "SSH-2.0-eessh_0.1\r\n";
+const char ssh_client_version_string[] = "SSH-2.0-eessh_0.1\r\n";
 
 struct SSH_CONN {
   int sock;
-  struct SSH_HOST_BANNER server_banner;
+  struct SSH_VERSION_STRING server_version_string;
   struct SSH_STRING session_id;
   struct SSH_STREAM in_stream;
   struct SSH_STREAM out_stream;
@@ -36,7 +36,7 @@ static struct SSH_CONN *conn_new(void)
     ssh_set_error("out of memory");
     return NULL;
   }
-  memset(&conn->server_banner, 0, sizeof(conn->server_banner));
+  memset(&conn->server_version_string, 0, sizeof(conn->server_version_string));
   conn->session_id = ssh_str_new_empty();
   ssh_stream_init(&conn->in_stream);
   ssh_stream_init(&conn->out_stream);
@@ -53,9 +53,9 @@ void ssh_conn_close(struct SSH_CONN *conn)
   ssh_free(conn);
 }
 
-struct SSH_HOST_BANNER *ssh_conn_get_server_banner(struct SSH_CONN *conn)
+struct SSH_VERSION_STRING *ssh_conn_get_server_version_string(struct SSH_CONN *conn)
 {
-  return &conn->server_banner;
+  return &conn->server_version_string;
 }
 
 int ssh_conn_set_cipher(struct SSH_CONN *conn, enum SSH_CONN_DIRECTION dir, enum SSH_CIPHER_TYPE type, struct SSH_STRING *iv, struct SSH_STRING *key)
@@ -106,56 +106,46 @@ int ssh_conn_send_ignore_msg(struct SSH_CONN *conn)
   return 0;
 }
 
+int conn_setup(struct SSH_CONN *conn)
+{
+  struct SSH_VERSION_STRING *server_version;
+  
+  if (ssh_net_write_all(conn->sock, ssh_client_version_string, sizeof(ssh_client_version_string)-1) < 0)
+    return -1;
+
+  server_version = &conn->server_version_string;
+  if (ssh_version_string_read(server_version, conn->sock, &conn->in_stream.net_buffer) < 0)
+    return -1;
+  
+  ssh_log("* got server version '%.*s'\n", (int) server_version->version.len, server_version->version.str);
+  ssh_log("* got server software '%.*s'\n", (int) server_version->software.len, server_version->software.str);
+  ssh_log("* got server comments '%.*s'\n", (int) server_version->comments.len, server_version->comments.str);
+
+  if (! ((   server_version->version.len == 4 && memcmp(server_version->version.str, "1.99", server_version->version.len) == 0)
+	 || (server_version->version.len == 3 && memcmp(server_version->version.str,  "2.0", server_version->version.len) == 0))) {
+    ssh_set_error("bad server version: '%.*s'", (int) server_version->version.len, server_version->version.str);
+    return -1;
+  }
+
+  return 0;
+}
+
 struct SSH_CONN *ssh_conn_open(const char *server, const char *port)
 {
-  int sock;
-  struct SSH_HOST_BANNER banner;
   struct SSH_CONN *conn;
   
+  conn = conn_new();
+  if (conn == NULL)
+    return NULL;
+
   ssh_log("* connecting to server %s port %s\n", server, port);
-  sock = ssh_net_connect(server, port);
-  if (sock < 0)
-    return NULL;
-
-  if (ssh_net_write_all(sock, ssh_client_banner_string, sizeof(ssh_client_banner_string)-1) < 0) {
-    close(sock);
-    return NULL;
-  }
-
-  if (ssh_banner_read(&banner, sock) < 0) {
-    close(sock);
+  conn->sock = ssh_net_connect(server, port);
+  if (conn->sock < 0
+      || conn_setup(conn) < 0) {
+    ssh_conn_close(conn);
     return NULL;
   }
   
-  ssh_log("* got server version '%.*s'\n", (int) banner.version.len, banner.version.str);
-  ssh_log("* got server software '%.*s'\n", (int) banner.software.len, banner.software.str);
-  ssh_log("* got server comments '%.*s'\n", (int) banner.comments.len, banner.comments.str);
-
-  if (! ((   banner.version.len == 4 && memcmp(banner.version.str, "1.99", banner.version.len) == 0)
-	 || (banner.version.len == 3 && memcmp(banner.version.str,  "2.0", banner.version.len) == 0))) {
-    close(sock);
-    ssh_set_error("bad server version: '%.*s'", (int) banner.version.len, banner.version.str);
-    return NULL;
-  }
-
-  conn = conn_new();
-  if (conn == NULL) {
-    close(sock);
-    return NULL;
-  }
-  conn->sock = sock;
-  conn->server_banner = banner;
-
-  if (ssh_conn_send_ignore_msg(conn) < 0) {
-    ssh_conn_close(conn);
-    return NULL;
-  }
-
-  if (ssh_conn_send_ignore_msg(conn) < 0) {
-    ssh_conn_close(conn);
-    return NULL;
-  }
-
   if (ssh_kex_run(conn) < 0) {
     ssh_conn_close(conn);
     return NULL;

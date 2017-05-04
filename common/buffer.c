@@ -142,7 +142,7 @@ int ssh_buf_ensure_size(struct SSH_BUFFER *buf, size_t new_len)
   if (buf->cap >= new_len)
     return 0;
 
-  return ssh_buf_grow(buf, new_len - buf->cap);
+  return ssh_buf_grow(buf, new_len - buf->len);
 }
 
 int ssh_buf_grow(struct SSH_BUFFER *buf, size_t add_len)
