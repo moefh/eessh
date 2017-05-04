@@ -382,9 +382,9 @@ int ssh_buf_read_u32(struct SSH_BUF_READER *buf, uint32_t *ret_val)
 
   if (ret_val != NULL)
     *ret_val = ((  (uint32_t) buf->data[buf->pos  ] << 24)
-		| ((uint32_t) buf->data[buf->pos+1] << 16)
-		| ((uint32_t) buf->data[buf->pos+2] << 8)
-		| ((uint32_t) buf->data[buf->pos+3]));
+                | ((uint32_t) buf->data[buf->pos+1] << 16)
+                | ((uint32_t) buf->data[buf->pos+2] << 8)
+                | ((uint32_t) buf->data[buf->pos+3]));
   buf->pos += 4;
   return 0;
 }

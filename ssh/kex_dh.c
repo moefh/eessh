@@ -121,8 +121,8 @@ static int dh_kex_recv_newkeys_msg(struct SSH_CONN *conn)
  * (see https://tools.ietf.org/html/rfc4253#section-8)
  */
 static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type, const struct SSH_STRING *server_host_key,
-		       const struct SSH_STRING *client_pubkey, const struct SSH_STRING *server_pubkey,
-		       const struct SSH_STRING *shared_secret, struct SSH_CONN *conn, struct SSH_KEX *kex)
+                       const struct SSH_STRING *client_pubkey, const struct SSH_STRING *server_pubkey,
+                       const struct SSH_STRING *shared_secret, struct SSH_CONN *conn, struct SSH_KEX *kex)
 {
   struct SSH_BUFFER data;
   struct SSH_STRING data_str;

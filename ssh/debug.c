@@ -14,10 +14,10 @@
 
 #define MAKE_BUFFER_DUMPER(func) \
   void func(const char *label, struct SSH_BUFFER *b, uint32_t mac_len) { \
-    struct SSH_BUF_READER r = ssh_buf_reader_new_from_buffer(b);	\
-    ssh_buf_read_u32(&r, NULL);						\
-    ssh_buf_read_u8(&r, NULL);						\
-    func ## _reader(label, &r, mac_len);				\
+    struct SSH_BUF_READER r = ssh_buf_reader_new_from_buffer(b);        \
+    ssh_buf_read_u32(&r, NULL);                                         \
+    ssh_buf_read_u8(&r, NULL);                                          \
+    func ## _reader(label, &r, mac_len);                                \
   }
 
 MAKE_BUFFER_DUMPER(dump_packet)

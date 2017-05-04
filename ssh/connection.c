@@ -122,7 +122,7 @@ int conn_setup(struct SSH_CONN *conn)
   ssh_log("* got server comments '%.*s'\n", (int) server_version->comments.len, server_version->comments.str);
 
   if (! ((   server_version->version.len == 4 && memcmp(server_version->version.str, "1.99", server_version->version.len) == 0)
-	 || (server_version->version.len == 3 && memcmp(server_version->version.str,  "2.0", server_version->version.len) == 0))) {
+         || (server_version->version.len == 3 && memcmp(server_version->version.str,  "2.0", server_version->version.len) == 0))) {
     ssh_set_error("bad server version: '%.*s'", (int) server_version->version.len, server_version->version.str);
     return -1;
   }
@@ -176,7 +176,7 @@ struct SSH_CONN *ssh_conn_open(const char *server, const char *port)
 
     //if (ssh_buf_write_u8(pack, SSH_MSG_SERVICE_REQUEST) < 0
     if (ssh_buf_write_u8(pack, SSH_MSG_IGNORE) < 0
-	|| ssh_buf_write_cstring(pack, "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ") < 0) {
+        || ssh_buf_write_cstring(pack, "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ") < 0) {
       ssh_conn_close(conn);
       return NULL;
     }
@@ -206,8 +206,8 @@ struct SSH_CONN *ssh_conn_open(const char *server, const char *port)
 
     ssh_log("* writing packet type\n");
     if (ssh_buf_write_u8(pack, SSH_MSG_SERVICE_REQUEST) < 0
-	|| ssh_buf_write_cstring(pack, "ssh-userauth") < 0) {
-	//|| ssh_buf_write_cstring(pack, "ssh-connection")) {
+        || ssh_buf_write_cstring(pack, "ssh-userauth") < 0) {
+        //|| ssh_buf_write_cstring(pack, "ssh-connection")) {
       ssh_conn_close(conn);
       return NULL;
     }
@@ -245,10 +245,10 @@ struct SSH_CONN *ssh_conn_open(const char *server, const char *port)
     ssh_log("* writing packet type SSH_MSG_USERAUTH_REQUEST\n");
     if (ssh_buf_write_u8(pack, SSH_MSG_USERAUTH_REQUEST) < 0
         || ssh_buf_write_cstring(pack, "massaro") < 0
-	|| ssh_buf_write_cstring(pack, "ssh-connection") < 0
-	|| ssh_buf_write_cstring(pack, "password") < 0
-	|| ssh_buf_write_u8(pack, 0) < 0
-	|| ssh_buf_write_cstring(pack, "123qwe") < 0) {
+        || ssh_buf_write_cstring(pack, "ssh-connection") < 0
+        || ssh_buf_write_cstring(pack, "password") < 0
+        || ssh_buf_write_u8(pack, 0) < 0
+        || ssh_buf_write_cstring(pack, "123qwe") < 0) {
       ssh_conn_close(conn);
       return NULL;
     }
@@ -311,8 +311,8 @@ struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn)
 
     type = ssh_packet_get_type(pack);
     if (type != SSH_MSG_IGNORE
-	&& type != SSH_MSG_UNIMPLEMENTED
-	&& type != SSH_MSG_DEBUG)
+        && type != SSH_MSG_UNIMPLEMENTED
+        && type != SSH_MSG_DEBUG)
       return pack;
   }
 }

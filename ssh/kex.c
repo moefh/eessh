@@ -197,8 +197,8 @@ static int gen_key(struct SSH_STRING *ret_key, uint32_t gen_key_len, uint8_t key
     //ssh_log("digesting %d/%d\n", (int) hash.len, (int) gen_key_len);
     ssh_buf_clear(&data);
     if (ssh_buf_write_string(&data, &kex->shared_secret) < 0
-	|| ssh_buf_append_string(&data, &kex->exchange_hash) < 0
-	|| ssh_buf_append_buffer(&data, &hash) < 0) {
+        || ssh_buf_append_string(&data, &kex->exchange_hash) < 0
+        || ssh_buf_append_buffer(&data, &hash) < 0) {
       ssh_buf_free(&data);
       ssh_buf_free(&hash);
       return -1;
@@ -371,4 +371,3 @@ int ssh_kex_run(struct SSH_CONN *conn)
   kex_free(kex);
   return ret;
 }
-
