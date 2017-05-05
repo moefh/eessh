@@ -43,7 +43,7 @@ signature of `H`, a hash computed using the hash algorithm specified by
    The signature of `H` is computed using `server_host_key_algorithm`.
 
 3. The client derives "`shared_key`" from "`e`" and "`f`", computes `H`
-and checks it's is a valid signature for `K_S`, and also if `K_S` matches
+and checks that `K_S` is its signature, and also if `K_S` matches
 the identity of the server it meant to connect (if it has the server
 identity stored).
 
