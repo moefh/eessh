@@ -220,7 +220,7 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
   //dump_string(&server_pubkey, "server pubkey");
   //dump_string(&shared_secret, "shared secret");
   
-  if (ssh_pubkey_verify_signature(&server_host_key, &server_hash_sig, &exchange_hash) < 0) {
+  if (ssh_pubkey_verify_signature(kex->pubkey_type, &server_host_key, &server_hash_sig, &exchange_hash) < 0) {
     ssh_str_free(&shared_secret);
     return -1;
   }

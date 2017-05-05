@@ -17,6 +17,7 @@
 #include "ssh/ssh_constants.h"
 #include "ssh/debug.h"
 #include "ssh/hash.h"
+#include "ssh/pubkey.h"
 #include "crypto/algorithms.h"
 #include "crypto/random.h"
 
@@ -291,6 +292,7 @@ static int ssh_kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
 
   // TODO: choose algorithm based on client and server lists in KEX_INIT packets
   if ((kex->type = ssh_kex_get_by_name(kex_algo)) == SSH_KEX_INVALID
+      || (kex->pubkey_type = ssh_pubkey_get_by_name(server_host_key_algo)) == SSH_PUBKEY_INVALID
       || (kex->cipher_type_cts = ssh_cipher_get_by_name(encryption_algo_cts)) == SSH_CIPHER_INVALID
       || (kex->cipher_type_stc = ssh_cipher_get_by_name(encryption_algo_stc)) == SSH_CIPHER_INVALID
       || (kex->mac_type_cts = ssh_mac_get_by_name(mac_algo_cts)) == SSH_MAC_INVALID

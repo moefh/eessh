@@ -24,34 +24,47 @@ static const struct SSH_PUBKEY_ALGO {
   { SSH_PUBKEY_RSA, "ssh-rsa", SSH_HASH_SHA1, rsa_verify },
 };
 
-static const struct SSH_PUBKEY_ALGO *get_pubkey_algo(const struct SSH_STRING *name)
+static const struct SSH_PUBKEY_ALGO *get_pubkey_algo(const uint8_t *name, size_t name_len)
 {
   int i;
 
   for (i = 0; i < sizeof(pubkey_algos)/sizeof(pubkey_algos[0]); i++) {
-    size_t algo_name_len = strlen(pubkey_algos[i].name);
-    if (algo_name_len == name->len && memcmp(pubkey_algos[i].name, name->str, name->len) == 0)
+    if (memcmp(pubkey_algos[i].name, name, name_len) == 0 && pubkey_algos[i].name[name_len] == '\0')
       return &pubkey_algos[i];
   }
   return NULL;
 }
 
-int ssh_pubkey_verify_signature(struct SSH_STRING *key_data, struct SSH_STRING *signature, struct SSH_STRING *data)
+enum SSH_PUBKEY_TYPE ssh_pubkey_get_by_name(const char *name)
+{
+  const struct SSH_PUBKEY_ALGO *key_algo = get_pubkey_algo((uint8_t *)name, strlen(name));
+
+  if (key_algo == NULL)
+    return SSH_PUBKEY_INVALID;
+  return key_algo->type;
+}
+
+int ssh_pubkey_verify_signature(enum SSH_PUBKEY_TYPE key_type, struct SSH_STRING *key_data, struct SSH_STRING *signature, struct SSH_STRING *data)
 {
   struct SSH_BUF_READER key_buf;
-  struct SSH_STRING key_type;
+  struct SSH_STRING key_type_str;
   const struct SSH_PUBKEY_ALGO *key_algo;
   
   key_buf = ssh_buf_reader_new_from_string(key_data);
-  if (ssh_buf_read_string(&key_buf, &key_type) < 0)
+  if (ssh_buf_read_string(&key_buf, &key_type_str) < 0)
     return -1;
   
-  key_algo = get_pubkey_algo(&key_type);
+  key_algo = get_pubkey_algo(key_type_str.str, key_type_str.len);
   if (key_algo == NULL) {
-    ssh_set_error("invalid public key algorithm: '%.*s'", (int) key_type.len, key_type.str);
+    ssh_set_error("invalid public key algorithm: '%.*s'", (int) key_type_str.len, key_type_str.str);
     return -1;
   }
 
+  if (key_algo->type != key_type) {
+    ssh_set_error("key type '%.*s' doesn't match expected type (%d != %d)", (int) key_type_str.len, key_type_str.str, key_algo->type, key_type);
+    return -1;
+  }
+  
   return key_algo->verify(&key_buf, signature, data);
 }
 
@@ -76,7 +89,7 @@ static int rsa_verify(struct SSH_BUF_READER *key_data, struct SSH_STRING *signat
   sig_buf = ssh_buf_reader_new_from_string(signature);
   if (ssh_buf_read_string(&sig_buf, &sig_type) < 0)
     return -1;
-  pubkey_algo = get_pubkey_algo(&sig_type);
+  pubkey_algo = get_pubkey_algo(sig_type.str, sig_type.len);
   if (pubkey_algo == NULL) {
     ssh_set_error("invalid signature algorithm: '%.*s'", (int) sig_type.len, sig_type.str);
     return -1;
