@@ -122,8 +122,8 @@ int ssh_conn_check_server_identity(struct SSH_CONN *conn, struct SSH_STRING *ser
   if (conn->host_identity_checker != NULL)
     return conn->host_identity_checker((char *) conn->server_hostname.str, server_host_key);
 
-  ssh_set_error("check server identity not implemented!");
-  return 0;
+  ssh_set_error("no server identity checker set");
+  return -1;
 }
 
 /*
