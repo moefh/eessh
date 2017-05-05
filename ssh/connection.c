@@ -179,7 +179,7 @@ int conn_setup(struct SSH_CONN *conn)
   return 0;
 }
 
-int conn_save_hostname(struct SSH_CONN *conn, const char *server, const char *port)
+static int conn_save_hostname(struct SSH_CONN *conn, const char *server, const char *port)
 {
   if (ssh_str_alloc(&conn->server_hostname, strlen(server) + strlen(port) + 2) < 0)
     return -1;

@@ -20,20 +20,17 @@
 #include "crypto/dh.h"
 
 const static struct DH_ALGO {
-  const char *name;
   enum SSH_KEX_TYPE type;
-  enum SSH_HASH_TYPE hash_type;
   const char *gen;
   const char *modulus;
 } dh_algos[] = {
   /*
+   * diffie-hellman-group1-sha1
    * RFC 4243, section 8.1 (https://tools.ietf.org/html/rfc4253#section-8.1)
    * RFC 2409, section 6.2 (https://tools.ietf.org/html/rfc2409#section-6.2)
    */
   {
-    "diffie-hellman-group1-sha1",
     SSH_KEX_DH_GROUP_1,
-    SSH_HASH_SHA1,
     "2",
     "FFFFFFFF" "FFFFFFFF" "C90FDAA2" "2168C234" "C4C6628B" "80DC1CD1"
     "29024E08" "8A67CC74" "020BBEA6" "3B139B22" "514A0879" "8E3404DD"
@@ -44,13 +41,12 @@ const static struct DH_ALGO {
   },
 
   /*
+   * diffie-hellman-group14-sha1
    * RFC 4243, section 8.2 (https://tools.ietf.org/html/rfc4253#section-8.2)
    * RFC 3526, section 3   (https://tools.ietf.org/html/rfc3526#section-3)
    */
   {
-    "diffie-hellman-group14-sha1",
     SSH_KEX_DH_GROUP_14,
-    SSH_HASH_SHA1,
     "2",
     "FFFFFFFF" "FFFFFFFF" "C90FDAA2" "2168C234" "C4C6628B" "80DC1CD1"
     "29024E08" "8A67CC74" "020BBEA6" "3B139B22" "514A0879" "8E3404DD"
@@ -171,7 +167,7 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
 }
 
 /* read server key exchange reply */
-static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct SSH_KEX *kex, enum SSH_HASH_TYPE sig_hash_type)
+static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct SSH_KEX *kex)
 {
   struct SSH_BUF_READER *pack;
   struct SSH_STRING server_host_key;
@@ -211,7 +207,7 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
     return -1;
   }
 
-  if (dh_kex_hash(&exchange_hash, sig_hash_type, &server_host_key, &client_pubkey, &server_pubkey, &shared_secret, conn, kex) < 0) {
+  if (dh_kex_hash(&exchange_hash, kex->hash_type, &server_host_key, &client_pubkey, &server_pubkey, &shared_secret, conn, kex) < 0) {
     ssh_str_free(&shared_secret);
     return -1;
   }
@@ -258,7 +254,7 @@ int ssh_kex_dh_run(struct SSH_CONN *conn, struct SSH_KEX *kex)
     return -1;
 
   if (dh_kex_send_init_msg(dh, conn) < 0
-      || dh_kex_read_reply(dh, conn, kex, dh_algo->hash_type) < 0) {
+      || dh_kex_read_reply(dh, conn, kex) < 0) {
     crypto_dh_free(dh);
     return -1;
   }
