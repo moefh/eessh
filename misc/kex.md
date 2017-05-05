@@ -40,12 +40,16 @@ signature of `H`, a hash computed using the hash algorithm specified by
         "f"
         "shared_key", derived from "e" and "f"
 
-   The signature of `H` is computed using `server_host_key_algorithm`.
+   The signature of `H` is computed and verified using `server_host_key_algorithm`.
 
 3. The client derives "`shared_key`" from "`e`" and "`f`", computes `H`
-and checks that `K_S` is its signature, and also if `K_S` matches
-the identity of the server it meant to connect (if it has the server
-identity stored).
+and verifies `H`'s signature sent by the server.
+
+4. The client also checks that `K_S` matches the previously-known identity
+of the server it meant to connect. This is left as a hook to be provided by
+the user of the code (see function `check_host_identity` in `main.c`),
+a basic facility to store and check host identities is provided in
+`common/host_key_store.c`.
 
 Both parties now have `H` and `shared_secret`. This concludes the
 `kex_algorithm`-specific part of the key exchange.
