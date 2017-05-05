@@ -1,10 +1,11 @@
-/* banner.c */
+/* version_string.c */
 
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdint.h>
 
-#include "ssh/banner.h"
+#include "ssh/version_string.h"
 
 #include "common/error.h"
 #include "common/debug.h"
@@ -130,6 +131,20 @@ int ssh_version_string_read(struct SSH_VERSION_STRING *ver_str, int sock, struct
 {
   if (read_line(sock, ver_str, rest) < 0
       || parse_line(ver_str) < 0)
+    return -1;
+  return 0;
+}
+
+int ssh_version_string_build(struct SSH_VERSION_STRING *ver_str, const char *software, const char *comments)
+{
+  int len = snprintf((char *) ver_str->buf, VERSION_BUF_LEN, "SSH-2.0-%s %s\r\n", software, comments);
+  if (len < 0 || len >= VERSION_BUF_LEN) {
+    ssh_set_error("version string too large");
+    return -1;
+  }
+  ver_str->len = len;
+  
+  if (parse_line(ver_str) < 0)
     return -1;
   return 0;
 }

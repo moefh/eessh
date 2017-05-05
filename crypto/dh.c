@@ -54,7 +54,6 @@ int crypto_dh_compute_key(struct CRYPTO_DH *crypto_dh, struct SSH_STRING *ret_ke
   key = ssh_alloc(len+1);
   if (key == NULL) {
     BN_clear_free(bn_server_pubkey);
-    ssh_set_error("out of memory");
     return -1;
   }
   if (DH_compute_key(key+1, bn_server_pubkey, dh) != len) {

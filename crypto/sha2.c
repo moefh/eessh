@@ -61,10 +61,8 @@ struct CRYPTO_HASH_CTX *crypto_sha2_new(enum SSH_HASH_TYPE type)
   if ((evp = get_hash_evp(type)) == NULL)
     return NULL;
 
-  if ((ctx = ssh_alloc(sizeof(EVP_MD_CTX))) == NULL) {
-    ssh_set_error("out of memory");
+  if ((ctx = ssh_alloc(sizeof(EVP_MD_CTX))) == NULL)
     return NULL;
-  }
   EVP_MD_CTX_init(ctx);
   if (EVP_DigestInit_ex(ctx, evp, NULL) == 0) {
     ssh_free(ctx);

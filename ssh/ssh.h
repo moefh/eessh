@@ -6,6 +6,8 @@
 #include <stdint.h>
 
 #include "common/error.h"
+#include "common/debug.h"
+#include "common/host_key_store.h"
 #include "ssh/connection.h"
 
 #define SSH_INIT_NO_SIGNALS (1<<0)

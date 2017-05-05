@@ -84,14 +84,19 @@ struct SSH_STRING ssh_str_new_empty(void)
   return str;
 }
 
+int ssh_str_alloc(struct SSH_STRING *new_str, size_t len)
+{
+  new_str->len = len;
+  new_str->str = ssh_alloc(len);
+  if (new_str->str == NULL)
+    return -1;
+  return 0;
+}
+
 int ssh_str_dup_string(struct SSH_STRING *new_str, const struct SSH_STRING *str)
 {
-  new_str->len = str->len;
-  new_str->str = ssh_alloc(str->len);
-  if (new_str->str == NULL) {
-    ssh_set_error("out of memory");
+  if (ssh_str_alloc(new_str, str->len) < 0)
     return -1;
-  }
   memcpy(new_str->str, str->str, str->len);
   return 0;
 }
@@ -163,10 +168,8 @@ int ssh_buf_grow(struct SSH_BUFFER *buf, size_t add_len)
 
   /* grow to new length */
   new_data = ssh_realloc(buf->data, new_cap);
-  if (new_data == NULL) {
-    ssh_set_error("out of memory");
+  if (new_data == NULL)
     return -1;
-  }
 
   buf->data = new_data;
   buf->cap = new_cap;

@@ -140,10 +140,8 @@ struct SSH_MAC_CTX *ssh_mac_new(enum SSH_MAC_TYPE type, const struct SSH_STRING 
     return NULL;
   
   mac = ssh_alloc(sizeof(struct SSH_MAC_CTX));
-  if (mac == NULL) {
-    ssh_set_error("out of memory");
+  if (mac == NULL)
     return NULL;
-  }
 
   mac->algo = algo;
   mac->ctx = NULL;

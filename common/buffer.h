@@ -29,6 +29,7 @@ void ssh_buf_set_u32(uint8_t *data, uint32_t v);
 struct SSH_STRING ssh_str_new(uint8_t *data, size_t len);
 struct SSH_STRING ssh_str_new_empty(void);
 struct SSH_STRING ssh_str_new_from_buffer(struct SSH_BUFFER *buf);
+int ssh_str_alloc(struct SSH_STRING *new_str, size_t len);
 int ssh_str_dup_string(struct SSH_STRING *new_str, const struct SSH_STRING *str);
 void ssh_str_free(struct SSH_STRING *str);
 

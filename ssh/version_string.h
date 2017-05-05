@@ -1,7 +1,7 @@
-/* banner.h */
+/* version_string.h */
 
-#ifndef BANNER_H_FILE
-#define BANNER_H_FILE
+#ifndef VERSION_STRING_H_FILE
+#define VERSION_STRING_H_FILE
 
 #include <stddef.h>
 #include <stdint.h>
@@ -19,5 +19,6 @@ struct SSH_VERSION_STRING {
 };
 
 int ssh_version_string_read(struct SSH_VERSION_STRING *ver_str, int sock, struct SSH_BUFFER *rest);
+int ssh_version_string_build(struct SSH_VERSION_STRING *ver_str, const char *software, const char *comments);
 
-#endif /* BANNER_H_FILE */
+#endif /* VERSION_STRING_H_FILE */

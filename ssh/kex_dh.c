@@ -13,7 +13,7 @@
 #include "common/debug.h"
 #include "ssh/debug.h"
 #include "ssh/hash.h"
-#include "ssh/verify.h"
+#include "ssh/pubkey.h"
 #include "ssh/kex.h"
 #include "ssh/connection.h"
 #include "ssh/ssh_constants.h"
@@ -26,6 +26,10 @@ const static struct DH_ALGO {
   const char *gen;
   const char *modulus;
 } dh_algos[] = {
+  /*
+   * RFC 4243, section 8.1 (https://tools.ietf.org/html/rfc4253#section-8.1)
+   * RFC 2409, section 6.2 (https://tools.ietf.org/html/rfc2409#section-6.2)
+   */
   {
     "diffie-hellman-group1-sha1",
     SSH_KEX_DH_GROUP_1,
@@ -38,6 +42,11 @@ const static struct DH_ALGO {
     "EE386BFB" "5A899FA5" "AE9F2411" "7C4B1FE6" "49286651" "ECE65381"
     "FFFFFFFF" "FFFFFFFF"
   },
+
+  /*
+   * RFC 4243, section 8.2 (https://tools.ietf.org/html/rfc4253#section-8.2)
+   * RFC 3526, section 3   (https://tools.ietf.org/html/rfc3526#section-3)
+   */
   {
     "diffie-hellman-group14-sha1",
     SSH_KEX_DH_GROUP_14,
@@ -127,13 +136,15 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
   struct SSH_BUFFER data;
   struct SSH_STRING data_str;
   struct SSH_STRING hash;
+  struct SSH_VERSION_STRING *client_version;
   struct SSH_VERSION_STRING *server_version;
   uint8_t hash_data[SSH_HASH_MAX_LEN];
 
+  client_version = ssh_conn_get_client_version_string(conn);
   server_version = ssh_conn_get_server_version_string(conn);
   
   data = ssh_buf_new();
-  if (ssh_buf_write_cstring_n(&data, ssh_client_version_string, strlen(ssh_client_version_string)-2) < 0
+  if (ssh_buf_write_cstring_n(&data, (char *) client_version->buf, client_version->len) < 0
       || ssh_buf_write_cstring_n(&data, (char *) server_version->buf, server_version->len) < 0
       || ssh_buf_write_buffer(&data, &kex->client_kexinit) < 0
       || ssh_buf_write_buffer(&data, &kex->server_kexinit) < 0
@@ -185,10 +196,13 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
       || ssh_buf_read_string(pack, &server_pubkey) < 0
       || ssh_buf_read_string(pack, &server_hash_sig) < 0)
     return -1;
-  //dump_string(&server_host_key, "* server_host_key");
-  //dump_string(&server_pubkey, "* server_pubkey");
-  //dump_string(&server_hash_sig, "* hash_sig");
+  dump_string("* server_host_key", &server_host_key);
+  dump_string("* server_pubkey", &server_pubkey);
+  dump_string("* hash_sig", &server_hash_sig);
 
+  if (ssh_conn_check_server_identity(conn, &server_host_key) < 0)
+    return -1;
+  
   if (crypto_dh_compute_key(dh, &shared_secret, &server_pubkey) < 0)
     return -1;
 
@@ -206,7 +220,7 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
   //dump_string(&server_pubkey, "server pubkey");
   //dump_string(&shared_secret, "shared secret");
   
-  if (ssh_verify_check_signature(&server_host_key, &server_hash_sig, &exchange_hash) < 0) {
+  if (ssh_pubkey_verify_signature(&server_host_key, &server_hash_sig, &exchange_hash) < 0) {
     ssh_str_free(&shared_secret);
     return -1;
   }

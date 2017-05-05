@@ -1,7 +1,9 @@
 
+.#*
 *~
 *.o
 eessh
 core
 core.*
 .gdb_history
+host_keys.store
