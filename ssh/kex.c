@@ -1,6 +1,9 @@
 /* kex.c
  *
  * SSH key exchange conforming to RFC 4253 section 7
+ *
+ * TODO: handle first_kex_packet_follows set to 1 in
+ * SSH_MSG_KEXINIT sent by the server
  */
 
 #include <stdlib.h>
@@ -145,9 +148,30 @@ static int kex_recv_init_msg(struct SSH_CONN *conn, struct SSH_KEX *kex)
     ssh_set_error("unexpected packet of type %d (expected SSH_MSG_KEXINIT=%d)", ssh_packet_get_type(pack), SSH_MSG_KEXINIT);
     return -1;
   }
+  if (ssh_buf_read_skip(pack, 17) < 0   // msg type, cookie
+      || ssh_buf_read_string(pack, NULL) < 0   // kex_algorithms
+      || ssh_buf_read_string(pack, NULL) < 0   // server_host_key_algorithms
+      || ssh_buf_read_string(pack, NULL) < 0   // encryption_algorithms_cts
+      || ssh_buf_read_string(pack, NULL) < 0   // encryption_algorithms_stc
+      || ssh_buf_read_string(pack, NULL) < 0   // mac_algorithms_cts
+      || ssh_buf_read_string(pack, NULL) < 0   // mac_algorithms_stc
+      || ssh_buf_read_string(pack, NULL) < 0   // compression_algorithms_cts
+      || ssh_buf_read_string(pack, NULL) < 0   // compression_algorithms_stc
+      || ssh_buf_read_string(pack, NULL) < 0   // languages_cts
+      || ssh_buf_read_string(pack, NULL) < 0   // languages_stc
+      || ssh_buf_read_u8(pack, &kex->first_kex_packet_follows) < 0
+      || ssh_buf_read_u32(pack, NULL) < 0)
+    return -1;
+  if (kex->first_kex_packet_follows != 0) {
+    ssh_log("* WARNING: first_kex_packet_follows is set, untested code!");
+    return -1;
+  }
+
   if (kex_save_kexinit_data(&kex->server_kexinit, pack->data, pack->len) < 0)
     return -1;
   
+  ssh_buf_reader_rewind(pack);
+  ssh_buf_read_skip(pack, 5);
   dump_kexinit_packet_reader("received packet", pack, 0);
   return 0;
 }
@@ -282,7 +306,7 @@ static int kex_generate_keys(struct SSH_CONN *conn, struct SSH_KEX *kex)
   return ret;
 }
 
-static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pack, struct SSH_BUF_READER *server_pack)
+static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pack, struct SSH_BUF_READER *server_pack, uint8_t *server_guessed_right)
 {
   struct SSH_STRING client_algos;
   struct SSH_STRING server_algos;
@@ -290,6 +314,8 @@ static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pac
   struct SSH_BUF_READER server_algos_reader;
   struct SSH_STRING client_algo;
   struct SSH_STRING server_algo;
+  int clients_first_choice;
+  int servers_first_choice;
 
   if (ssh_buf_read_string(client_pack, &client_algos) < 0
       || ssh_buf_read_string(server_pack, &server_algos) < 0)
@@ -297,11 +323,13 @@ static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pac
   client_algos_reader = ssh_buf_reader_new_from_string(&client_algos);
   server_algos_reader = ssh_buf_reader_new_from_string(&server_algos);
 
+  clients_first_choice = 1;
   while (1) {
     if (ssh_buf_read_until(&client_algos_reader, ',', &client_algo) < 0
         || client_algo.len == 0)
       break;
     ssh_buf_reader_rewind(&server_algos_reader);
+    servers_first_choice = 1;
     while (1) {
       if (ssh_buf_read_until(&server_algos_reader, ',', &server_algo) < 0
           || server_algo.len == 0)
@@ -309,10 +337,14 @@ static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pac
       if (client_algo.len == server_algo.len
           && memcmp(client_algo.str, server_algo.str, client_algo.len) == 0) {
         *ret = client_algo;
+        if (server_guessed_right)
+          *server_guessed_right = clients_first_choice && servers_first_choice;
         ssh_log("** chosen algo: %.*s\n", (int) ret->len, ret->str);
         return 0;
       }
+      servers_first_choice = 0;
     }
+    clients_first_choice = 0;
   }
 
   ssh_set_error("no shared algorithms");
@@ -327,6 +359,7 @@ static int kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
   struct SSH_STRING kex_algo, server_host_key_algo;
   struct SSH_STRING encryption_cts_algo, encryption_stc_algo;
   struct SSH_STRING mac_cts_algo, mac_stc_algo;
+  uint8_t server_guessed_right;
 
   if (kex_send_init_msg(conn, kex) < 0
       || kex_recv_init_msg(conn, kex) < 0)
@@ -341,12 +374,12 @@ static int kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
       || ssh_buf_read_skip(&server_kexinit, 1 + 16) < 0)
     return -1;
 
-  if (choose_algo(&kex_algo, &client_kexinit, &server_kexinit) < 0
-      || choose_algo(&server_host_key_algo, &client_kexinit, &server_kexinit) < 0
-      || choose_algo(&encryption_cts_algo, &client_kexinit, &server_kexinit) < 0
-      || choose_algo(&encryption_stc_algo, &client_kexinit, &server_kexinit) < 0
-      || choose_algo(&mac_cts_algo, &client_kexinit, &server_kexinit) < 0
-      || choose_algo(&mac_stc_algo, &client_kexinit, &server_kexinit) < 0
+  if (choose_algo(&kex_algo, &client_kexinit, &server_kexinit, &server_guessed_right) < 0
+      || choose_algo(&server_host_key_algo, &client_kexinit, &server_kexinit, NULL) < 0
+      || choose_algo(&encryption_cts_algo, &client_kexinit, &server_kexinit, NULL) < 0
+      || choose_algo(&encryption_stc_algo, &client_kexinit, &server_kexinit, NULL) < 0
+      || choose_algo(&mac_cts_algo, &client_kexinit, &server_kexinit, NULL) < 0
+      || choose_algo(&mac_stc_algo, &client_kexinit, &server_kexinit, NULL) < 0
       || (kex->type = ssh_kex_get_by_name_str(&kex_algo)) == SSH_KEX_INVALID
       || (kex->pubkey_type = ssh_pubkey_get_by_name_str(&server_host_key_algo)) == SSH_PUBKEY_INVALID
       || (kex->cipher_type_cts = ssh_cipher_get_by_name_str(&encryption_cts_algo)) == SSH_CIPHER_INVALID
@@ -355,6 +388,14 @@ static int kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
       || (kex->mac_type_stc = ssh_mac_get_by_name_str(&mac_stc_algo)) == SSH_MAC_INVALID)
     return -1;
 
+  if (kex->first_kex_packet_follows && ! server_guessed_right) {
+    // server sent a guess packet, and its guess was wrong
+    // we must discard their first packet initiating the wrong key exchange
+    ssh_log("* ignoring server packet with wrong guess\n");
+    if (ssh_conn_recv_packet_skip_ignore(conn) == NULL)
+      return -1;
+  }
+  
   if ((algo = kex_get_algo(kex->type)) == NULL)
     return -1;
   kex->hash_type = algo->hash_type;

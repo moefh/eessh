@@ -100,11 +100,11 @@ static int read_key_file(FILE *f, key_file_line_callback callback, void *callbac
 
 static enum SSH_HOST_KEY_STORE_STATUS line_matches_key(char *line, struct HOST_DATA *host_data)
 {
+  char buffer[MAX_LINE_SIZE];
   char *hostname, *key_type, *host_key, *save;
 
-  //printf("-> matching line: %s", line);
-  
-  hostname = strtok_r(line, " \t\r\n", &save);
+  strcpy(buffer, line);
+  hostname = strtok_r(buffer, " \t\r\n", &save);
   if (hostname == NULL || *hostname == '#' || strcmp(hostname, host_data->hostname) != 0)
     return SSH_HOST_KEY_STORE_STATUS_ERR_NOT_FOUND;
 

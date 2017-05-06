@@ -12,8 +12,6 @@
 #define SSH_MSG_SERVICE_ACCEPT                   6
 #define SSH_MSG_KEXINIT                         20
 #define SSH_MSG_NEWKEYS                         21
-#define SSH_MSG_KEXDH_INIT                      30
-#define SSH_MSG_KEXDH_REPLY                     31
 #define SSH_MSG_USERAUTH_REQUEST                50
 #define SSH_MSG_USERAUTH_FAILURE                51
 #define SSH_MSG_USERAUTH_SUCCESS                52
@@ -32,6 +30,13 @@
 #define SSH_MSG_CHANNEL_REQUEST                 98
 #define SSH_MSG_CHANNEL_SUCCESS                 99
 #define SSH_MSG_CHANNEL_FAILURE                100
+
+/* DH key exchange */
+#define SSH_MSG_KEXDH_INIT             30
+#define SSH_MSG_KEXDH_REPLY            31
+
+/* publickey USERAUTH */
+#define SSH_MSG_USERAUTH_PK_OK         60
 
 /* SSH_MSG_DISCONNECT reason codes */
 #define SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT          1
@@ -61,5 +66,6 @@
 
 
 const char *ssh_const_get_msg_name(unsigned char msg_type);
+const char *ssh_const_get_disconnect_reason(uint32_t reason_code);
 
 #endif /* SSH_CONSTANTS_H_FILE */

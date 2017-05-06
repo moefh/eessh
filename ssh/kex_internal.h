@@ -8,6 +8,7 @@
 #include "common/buffer.h"
 
 struct SSH_KEX {
+  uint8_t first_kex_packet_follows;
   enum SSH_KEX_TYPE type;
   enum SSH_HASH_TYPE hash_type;
   enum SSH_PUBKEY_TYPE pubkey_type;  

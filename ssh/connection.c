@@ -18,6 +18,7 @@
 #include "ssh/ssh_constants.h"
 #include "ssh/version_string.h"
 #include "ssh/kex.h"
+#include "ssh/userauth.h"
 
 #define CLIENT_SOFTWARE "eessh_0.1"
 
@@ -30,7 +31,11 @@ struct SSH_CONN {
   struct SSH_STREAM in_stream;
   struct SSH_STREAM out_stream;
   struct SSH_BUF_READER last_pack_read;
-  ssh_host_identity_checker host_identity_checker;
+
+  ssh_host_identity_checker server_identity_checker;
+
+  struct SSH_STRING username;
+  ssh_password_reader password_reader;
 };
 
 struct SSH_CONN *ssh_conn_new(void)
@@ -45,7 +50,11 @@ struct SSH_CONN *ssh_conn_new(void)
   conn->session_id = ssh_str_new_empty();
   ssh_stream_init(&conn->in_stream);
   ssh_stream_init(&conn->out_stream);
-  conn->host_identity_checker = NULL;
+  
+  conn->server_identity_checker = NULL;
+
+  conn->username = ssh_str_new_empty();
+  conn->password_reader = NULL;
   return conn;
 }
 
@@ -63,6 +72,7 @@ void ssh_conn_free(struct SSH_CONN *conn)
   ssh_stream_close(&conn->out_stream);
   ssh_str_free(&conn->session_id);
   ssh_str_free(&conn->server_hostname);
+  ssh_str_free(&conn->username);
   ssh_free(conn);
 }
 
@@ -83,6 +93,11 @@ struct SSH_VERSION_STRING *ssh_conn_get_client_version_string(struct SSH_CONN *c
 struct SSH_VERSION_STRING *ssh_conn_get_server_version_string(struct SSH_CONN *conn)
 {
   return &conn->server_version_string;
+}
+
+struct SSH_STRING ssh_conn_get_server_hostname(struct SSH_CONN *conn)
+{
+  return conn->server_hostname;
 }
 
 int ssh_conn_set_cipher(struct SSH_CONN *conn, enum SSH_CONN_DIRECTION dir, enum SSH_CIPHER_TYPE type, struct SSH_STRING *iv, struct SSH_STRING *key)
@@ -111,18 +126,39 @@ struct SSH_STRING *ssh_conn_get_session_id(struct SSH_CONN *conn)
   return &conn->session_id;
 }
 
-void ssh_conn_set_host_key_checker(struct SSH_CONN *conn, ssh_host_identity_checker checker)
+void ssh_conn_set_server_identity_checker(struct SSH_CONN *conn, ssh_host_identity_checker checker)
 {
-  conn->host_identity_checker = checker;
+  conn->server_identity_checker = checker;
 }
 
 int ssh_conn_check_server_identity(struct SSH_CONN *conn, struct SSH_STRING *server_host_key)
 {
-  if (conn->host_identity_checker != NULL)
-    return conn->host_identity_checker((char *) conn->server_hostname.str, server_host_key);
+  if (conn->server_identity_checker != NULL)
+    return conn->server_identity_checker((char *) conn->server_hostname.str, server_host_key);
 
   ssh_set_error("no server identity checker set");
   return -1;
+}
+
+int ssh_conn_set_username(struct SSH_CONN *conn, const char *username)
+{
+  ssh_str_free(&conn->username);
+  return ssh_str_dup_cstring(&conn->username, username);
+}
+
+struct SSH_STRING ssh_conn_get_username(struct SSH_CONN *conn)
+{
+  return conn->username;
+}
+
+void ssh_conn_set_password_reader(struct SSH_CONN *conn, ssh_password_reader reader)
+{
+  conn->password_reader = reader;
+}
+
+ssh_password_reader ssh_conn_get_password_reader(struct SSH_CONN *conn)
+{
+  return conn->password_reader;
 }
 
 /*
@@ -204,54 +240,10 @@ int ssh_conn_open(struct SSH_CONN *conn, const char *server, const char *port)
     return -1;
   }
 
-#if 0
-  {
-    struct SSH_BUF_READER *pack = ssh_conn_recv_packet(conn);
-    if (pack == NULL) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    dump_packet_reader("received packet", pack, conn->in_stream.mac_len);
-  }
-#endif
-
-#if 1
-  if (ssh_conn_send_ignore_msg(conn, "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ") < 0) {
+  if (ssh_userauth_run(conn) < 0) {
     ssh_conn_close(conn);
     return -1;
   }
-#endif
-  
-#if 1
-  ssh_log("* sending SSH_MSG_SERVICE_REQUEST...\n");
-
-  // send SSH_MSG_SERVICE_REQUEST packet
-  {
-    struct SSH_BUFFER *pack;
-
-    ssh_log("* making new packet\n");
-    pack = ssh_conn_new_packet(conn);
-    if (pack == NULL) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-
-    ssh_log("* writing packet type\n");
-    if (ssh_buf_write_u8(pack, SSH_MSG_SERVICE_REQUEST) < 0
-        || ssh_buf_write_cstring(pack, "ssh-userauth") < 0) {
-        //|| ssh_buf_write_cstring(pack, "ssh-connection")) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    
-    ssh_log("* sending packet\n");
-    if (ssh_conn_send_packet(conn) < 0) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    ssh_log("* packet sent\n");
-  }
-#endif
 
 #if 1
   for (int i = 0; i < 1; i++) {
@@ -293,17 +285,28 @@ struct SSH_BUF_READER *ssh_conn_recv_packet(struct SSH_CONN *conn)
 struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn)
 {
   while (1) {
-    uint8_t type;
+    uint32_t reason_code;
     struct SSH_BUF_READER *pack;
 
-    pack = ssh_conn_recv_packet(conn);
-    if (pack == NULL)
+    if ((pack = ssh_conn_recv_packet(conn)) == NULL)
       return NULL;
 
-    type = ssh_packet_get_type(pack);
-    if (type != SSH_MSG_IGNORE
-        && type != SSH_MSG_UNIMPLEMENTED
-        && type != SSH_MSG_DEBUG)
+    switch (ssh_packet_get_type(pack)) {
+    case SSH_MSG_IGNORE:
+    case SSH_MSG_UNIMPLEMENTED:
+    case SSH_MSG_DEBUG:
+      continue;
+
+    case SSH_MSG_DISCONNECT:
+      ssh_log("**** RECEIVED SSH_MSG_DISCONNECT ****\n");
+      if (ssh_buf_read_u32(pack, &reason_code) >= 0)
+        ssh_set_error("server disconnect (%s)", ssh_const_get_disconnect_reason(reason_code));
+      else
+        ssh_set_error("server disconnect");
+      return NULL;
+
+    default:
       return pack;
+    }    
   }
 }

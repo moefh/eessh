@@ -105,8 +105,8 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
   server_version = ssh_conn_get_server_version_string(conn);
   
   data = ssh_buf_new();
-  if (ssh_buf_write_cstring_n(&data, (char *) client_version->buf, client_version->len) < 0
-      || ssh_buf_write_cstring_n(&data, (char *) server_version->buf, server_version->len) < 0
+  if (ssh_buf_write_data(&data, (uint8_t *) client_version->buf, client_version->len) < 0
+      || ssh_buf_write_data(&data, (uint8_t *) server_version->buf, server_version->len) < 0
       || ssh_buf_write_buffer(&data, &kex->client_kexinit) < 0
       || ssh_buf_write_buffer(&data, &kex->server_kexinit) < 0
       || ssh_buf_write_string(&data, server_host_key) < 0
@@ -154,7 +154,7 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
       || ssh_buf_read_string(pack, &server_pubkey) < 0
       || ssh_buf_read_string(pack, &server_hash_sig) < 0)
     return -1;
-  dump_string("* server_host_key", &server_host_key);
+  //dump_string("* server_host_key", &server_host_key);
   //dump_string("* server_pubkey", &server_pubkey);
   //dump_string("* hash_sig", &server_hash_sig);
 

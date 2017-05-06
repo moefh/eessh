@@ -12,7 +12,7 @@ static const struct MSG_NAME {
   const char *name;
 } msg_names[] = {
 #define ADD_MSG_NAME(type) { type, #type }
-
+  
   ADD_MSG_NAME(SSH_MSG_DISCONNECT),
   ADD_MSG_NAME(SSH_MSG_IGNORE),
   ADD_MSG_NAME(SSH_MSG_UNIMPLEMENTED),
@@ -45,6 +45,31 @@ static const struct MSG_NAME {
 #undef ADD_MSG_NAME
 };
 
+static const struct MSG_DISCONNECT_REASON {
+  uint32_t reason_code;
+  const char *message;
+} msg_disconnect_reasons[] = {
+#define ADD_REASON(code) { SSH_DISCONNECT_##code, #code }
+  
+  ADD_REASON(HOST_NOT_ALLOWED_TO_CONNECT),
+  ADD_REASON(PROTOCOL_ERROR),
+  ADD_REASON(KEY_EXCHANGE_FAILED),
+  ADD_REASON(RESERVED),
+  ADD_REASON(MAC_ERROR),
+  ADD_REASON(COMPRESSION_ERROR),
+  ADD_REASON(SERVICE_NOT_AVAILABLE),
+  ADD_REASON(PROTOCOL_VERSION_NOT_SUPPORTED),
+  ADD_REASON(HOST_KEY_NOT_VERIFIABLE),
+  ADD_REASON(CONNECTION_LOST),
+  ADD_REASON(BY_APPLICATION),
+  ADD_REASON(TOO_MANY_CONNECTIONS),
+  ADD_REASON(AUTH_CANCELLED_BY_USER),
+  ADD_REASON(NO_MORE_AUTH_METHODS_AVAILABLE),
+  ADD_REASON(ILLEGAL_USER_NAME),
+  
+#undef ADD_REASON
+};
+  
 static char msg_unknown[256];
 
 const char *ssh_const_get_msg_name(uint8_t msg_type)
@@ -57,5 +82,18 @@ const char *ssh_const_get_msg_name(uint8_t msg_type)
   }
   
   snprintf(msg_unknown, sizeof(msg_unknown), "unknown message %d", msg_type);
+  return msg_unknown;
+}
+
+const char *ssh_const_get_disconnect_reason(uint32_t reason_code)
+{
+  int i;
+  
+  for (i = 0; i < sizeof(msg_disconnect_reasons)/sizeof(msg_disconnect_reasons[0]); i++) {
+    if (msg_disconnect_reasons[i].reason_code == reason_code)
+      return msg_disconnect_reasons[i].message;
+  }
+  
+  snprintf(msg_unknown, sizeof(msg_unknown), "unknown disconnect reason: %u", reason_code);
   return msg_unknown;
 }
