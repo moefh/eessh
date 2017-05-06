@@ -62,7 +62,7 @@ const static struct DH_ALGO {
   },
 };
 
-/* send SSH_MSG_NEWKEYS packet */
+/* send SSH_MSG_KEXDH_INIT packet */
 static int dh_kex_send_init_msg(struct CRYPTO_DH *dh, struct SSH_CONN *conn)
 {
   struct SSH_STRING e;
@@ -71,7 +71,7 @@ static int dh_kex_send_init_msg(struct CRYPTO_DH *dh, struct SSH_CONN *conn)
   if (crypto_dh_get_pubkey(dh, &e) < 0)
     return -1;
 
-  ssh_log("* sending SSH_MSG_KEXDH_INIT...\n");
+  ssh_log("* sending SSH_MSG_KEXDH_INIT\n");
 
   pack = ssh_conn_new_packet(conn);
   if (pack == NULL)
@@ -83,41 +83,6 @@ static int dh_kex_send_init_msg(struct CRYPTO_DH *dh, struct SSH_CONN *conn)
   
   if (ssh_conn_send_packet(conn) < 0)
     return -1;
-  //ssh_packet_dump(pack, 0);
-  return 0;
-}
-
-/* send SSH_MSG_NEWKEYS packet */
-static int dh_kex_send_newkeys_msg(struct SSH_CONN *conn)
-{
-  struct SSH_BUFFER *pack;
-
-  pack = ssh_conn_new_packet(conn);
-  if (pack == NULL)
-    return -1;
-    
-  if (ssh_buf_write_u8(pack, SSH_MSG_NEWKEYS))
-    return -1;
-  if (ssh_conn_send_packet(conn) < 0)
-    return -1;
-  return 0;
-}
-
-/* receive SSH_MSG_NEWKEYS packet */
-static int dh_kex_recv_newkeys_msg(struct SSH_CONN *conn)
-{
-  struct SSH_BUF_READER *pack;
-  
-  pack = ssh_conn_recv_packet_skip_ignore(conn);
-  if (pack == NULL)
-    return -1;
-
-  if (ssh_packet_get_type(pack) != SSH_MSG_NEWKEYS) {
-    ssh_set_error("unexpected packet type: %d (expected SSH_MSG_NEWKEYS=%d)", ssh_packet_get_type(pack), SSH_MSG_NEWKEYS);
-    return -1;
-  }
-  dump_packet_reader("received SSH_MSG_NEWKEYS", pack, 0);
-
   return 0;
 }
 
@@ -149,7 +114,6 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
       || ssh_buf_write_string(&data, server_pubkey) < 0
       || ssh_buf_write_string(&data, shared_secret) < 0)
     return -1;
-  //dump_mem(data.data, data.len, "DATA BEING HASHED");
 
   // hash data
   data_str = ssh_str_new_from_buffer(&data);
@@ -166,7 +130,7 @@ static int dh_kex_hash(struct SSH_STRING *ret_hash, enum SSH_HASH_TYPE hash_type
   return 0;
 }
 
-/* read server key exchange reply */
+/* read SSH_MSG_KEXDH_REPLY message */
 static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct SSH_KEX *kex)
 {
   struct SSH_BUF_READER *pack;
@@ -177,11 +141,9 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
   struct SSH_STRING server_hash_sig;
   struct SSH_STRING exchange_hash;
   
-  // SSH_MSG_KEXDH_REPLY
   pack = ssh_conn_recv_packet_skip_ignore(conn);
   if (pack == NULL)
     return -1;
-  //ssh_packet_dump(pack, 0);
   if (ssh_packet_get_type(pack) != SSH_MSG_KEXDH_REPLY) {
     ssh_set_error("unexpected packet type: %d (expected SSH_MSG_KEXDH_REPLY=%d)", ssh_packet_get_type(pack), SSH_MSG_KEXDH_REPLY);
     return -1;
@@ -193,41 +155,35 @@ static int dh_kex_read_reply(struct CRYPTO_DH *dh, struct SSH_CONN *conn, struct
       || ssh_buf_read_string(pack, &server_hash_sig) < 0)
     return -1;
   dump_string("* server_host_key", &server_host_key);
-  dump_string("* server_pubkey", &server_pubkey);
-  dump_string("* hash_sig", &server_hash_sig);
+  //dump_string("* server_pubkey", &server_pubkey);
+  //dump_string("* hash_sig", &server_hash_sig);
 
-  if (ssh_conn_check_server_identity(conn, &server_host_key) < 0)
-    return -1;
-  
+  // compute shared_secret
   if (crypto_dh_compute_key(dh, &shared_secret, &server_pubkey) < 0)
     return -1;
 
-  if (crypto_dh_get_pubkey(dh, &client_pubkey) < 0) {
+  // compute exchange_hash
+  if (crypto_dh_get_pubkey(dh, &client_pubkey) < 0
+      || dh_kex_hash(&exchange_hash, kex->hash_type, &server_host_key, &client_pubkey, &server_pubkey, &shared_secret, conn, kex) < 0) {
     ssh_str_free(&shared_secret);
     return -1;
   }
 
-  if (dh_kex_hash(&exchange_hash, kex->hash_type, &server_host_key, &client_pubkey, &server_pubkey, &shared_secret, conn, kex) < 0) {
-    ssh_str_free(&shared_secret);
-    return -1;
-  }
-
-  //dump_string(&client_pubkey, "client pubkey");
-  //dump_string(&server_pubkey, "server pubkey");
-  //dump_string(&shared_secret, "shared secret");
-  
+  // verify signature
   if (ssh_pubkey_verify_signature(kex->pubkey_type, &server_host_key, &server_hash_sig, &exchange_hash) < 0) {
-    ssh_str_free(&shared_secret);
-    return -1;
-  }
-  ssh_log("* server signature verified\n");
-  
-  if (dh_kex_recv_newkeys_msg(conn) < 0
-      || dh_kex_send_newkeys_msg(conn) < 0) {
     ssh_str_free(&shared_secret);
     ssh_str_free(&exchange_hash);
     return -1;
   }
+  ssh_log("* server signature verified\n");
+
+  // verify identity
+  if (ssh_conn_check_server_identity(conn, &server_host_key) < 0) {
+    ssh_str_free(&shared_secret);
+    ssh_str_free(&exchange_hash);
+    return -1;
+  }
+  ssh_log("* server identity verified\n");
 
   return ssh_kex_finish(conn, kex, &shared_secret, &exchange_hash);
 }

@@ -8,8 +8,9 @@
 
 #include "crypto/rsa.h"
 
-#include "common/buffer.h"
 #include "common/error.h"
+#include "common/debug.h"
+#include "common/buffer.h"
 #include "crypto/algorithms.h"
 #include "crypto/oid.h"
 #include "crypto/bignum.h"
@@ -47,11 +48,7 @@ int crypto_rsa_verify(enum SSH_HASH_TYPE hash_type, struct SSH_STRING *e, struct
   if (rsa_size < signature->len) {
     ssh_set_error("signature too large");
     return -1;
-  }
-  if (rsa_size == signature->len) {
-    use_sig = *signature;
-    must_free_sig = 0;
-  } else {
+  } else if (rsa_size > signature->len) {
     uint8_t *p;
 
     // fill signature with 0s at the start
@@ -63,12 +60,16 @@ int crypto_rsa_verify(enum SSH_HASH_TYPE hash_type, struct SSH_STRING *e, struct
 
     use_sig = ssh_str_new_from_buffer(&sig_buf);
     must_free_sig = 1;
+  } else {
+    use_sig = *signature;
+    must_free_sig = 0;
   }
 
   // decrypt signature
   decrypted_buf = ssh_buf_new();
   decrypted = ssh_buf_get_write_pointer(&decrypted_buf, rsa_size);
   decrypted_len = RSA_public_decrypt(use_sig.len, use_sig.str, decrypted, rsa, RSA_PKCS1_PADDING);
+
   if (decrypted_len < 0 || hash->len + oid.len != (size_t) decrypted_len) {
     RSA_free(rsa);
     ssh_buf_free(&decrypted_buf);
@@ -81,11 +82,6 @@ int crypto_rsa_verify(enum SSH_HASH_TYPE hash_type, struct SSH_STRING *e, struct
   if (must_free_sig)
     ssh_buf_free(&sig_buf);
 
-  //dump_mem(decrypted, oid.len, "decrypted OID");
-  //dump_string(&oid, "OID");
-  //dump_mem(decrypted + oid.len, decrypted_len - oid.len, "decrypted hash");
-  //dump_string(hash, "hash");
-  
   // TODO: protect against timing attacks
   oid_ok = (memcmp(decrypted, oid.str, oid.len) == 0);
   hash_ok = (memcmp(decrypted + oid.len, hash->str, hash->len) == 0);

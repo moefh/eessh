@@ -20,6 +20,8 @@ struct SSH_MAC_CTX;
 
 enum SSH_MAC_TYPE ssh_mac_get_by_name(const char *name);
 enum SSH_MAC_TYPE ssh_mac_get_by_name_n(const uint8_t *name, size_t name_len);
+enum SSH_MAC_TYPE ssh_mac_get_by_name_str(const struct SSH_STRING *name);
+int ssh_mac_get_supported_algos(struct SSH_BUFFER *ret);
 
 int ssh_mac_get_len(enum SSH_MAC_TYPE type);
 

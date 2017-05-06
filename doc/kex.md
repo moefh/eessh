@@ -13,7 +13,7 @@ future data transmission:
 | Algorithm                    | Usage                                        | Implemented here                 |
 |------------------------------|----------------------------------------------|----------------------------------|
 | `kex_algorithm`              | used in the key exchange itself              | `diffie-hellman-group1-sha1`, `diffie-hellman-group14-sha1` |
-| `server_host_key_algorithm`  | used to verify the server key                | `ssh-rsa`                        |
+| `server_host_key_algorithm`  | used to verify the server key                | `ssh-rsa`, `rsa-sha2-256`, `rsa-sha2-512`                   |
 | `encryption_algorithm`       | cipher used to encrypt transmitted data      | `aes128-cbc`, `aes128-ctr`       |
 | `mac_algorithm`              | MAC used to check the integrity of the data  | `hmac-sha2-256`, `hmac-sha2-512` |
 | `compression_algorithm`      | used to compress data (before encryption)    | `none`                           |
@@ -64,5 +64,3 @@ for `mac_algorithm`.
 
 It then sends `SSH_MSG_NEWKEYS` and receives `SSH_MSG_NEWKEYS` messages,
 indicating that the computed keys are to be be put to use.
-(NOTE: exchanging `SSH_MSG_NEWKEYS` is currently done, for no good reason,
-in `ssh/kex_dh.c`; this should be moved to `ssh/kex.c`).

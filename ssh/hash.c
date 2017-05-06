@@ -16,7 +16,6 @@ static const struct SSH_HASH_ALGO {
   enum SSH_HASH_TYPE type;
   int len;
 } hash_algos[] = {
-  { "none",     SSH_HASH_NONE,     0  },
   { "sha1",     SSH_HASH_SHA1,     20 },
   { "sha2-256", SSH_HASH_SHA2_256, 32 },
   { "sha2-512", SSH_HASH_SHA2_512, 64 },
@@ -55,15 +54,12 @@ int ssh_hash_get_len(enum SSH_HASH_TYPE type)
 int ssh_hash_get_block_size(enum SSH_HASH_TYPE type)
 {
   switch (type) {
-  case SSH_HASH_NONE:
-    return 0;
-
   case SSH_HASH_SHA1:
     return crypto_sha1_get_block_size(type);
 
   case SSH_HASH_SHA2_256:
   case SSH_HASH_SHA2_512:
-    return crypto_sha1_get_block_size(type);
+    return crypto_sha2_get_block_size(type);
 
   default:
     ssh_set_error("invalid hash type: %d", type);
@@ -76,10 +72,6 @@ int ssh_hash_compute(enum SSH_HASH_TYPE type, struct SSH_STRING *out, const stru
   uint32_t out_len;
   
   switch (type) {
-  case SSH_HASH_NONE:
-    out->len = 0;
-    return 0;
-
   case SSH_HASH_SHA1:
     if (crypto_sha1_single(type, out->str, &out_len, data->str, data->len) < 0)
       return -1;
@@ -88,7 +80,7 @@ int ssh_hash_compute(enum SSH_HASH_TYPE type, struct SSH_STRING *out, const stru
 
   case SSH_HASH_SHA2_256:
   case SSH_HASH_SHA2_512:
-    if (crypto_sha1_single(type, out->str, &out_len, data->str, data->len) < 0)
+    if (crypto_sha2_single(type, out->str, &out_len, data->str, data->len) < 0)
       return -1;
     out->len = out_len;
     return 0;

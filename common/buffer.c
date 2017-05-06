@@ -27,7 +27,7 @@ static int check_advance(size_t pos, size_t adv, size_t len)
   size_t new_pos;
   
   if (checked_add(&new_pos, pos, adv) < 0) {
-    ssh_set_error("buffer size too large");
+    ssh_set_error("data too large to read");
     return -1;
   }
   if (new_pos > len) {
@@ -407,6 +407,19 @@ int ssh_buf_read_string(struct SSH_BUF_READER *buf, struct SSH_STRING *ret_val)
     ret_val->len = len;
   }
   buf->pos += len;
+  return 0;
+}
+
+int ssh_buf_read_until(struct SSH_BUF_READER *buf, uint8_t sentinel, struct SSH_STRING *ret_val)
+{
+  size_t start_pos = buf->pos;
+
+  while ((buf->pos < buf->len) && (buf->data[buf->pos] != sentinel))
+    buf->pos++;
+  ret_val->str = buf->data + start_pos;
+  ret_val->len = buf->pos - start_pos;
+  if (buf->pos < buf->len)
+    buf->pos++;  // skip sentinel (but don't include it)
   return 0;
 }
 

@@ -24,9 +24,7 @@ static const struct MAC_ALGO {
   const char *name;
   enum SSH_MAC_TYPE type;
   enum SSH_HASH_TYPE hash_type;
-
   uint32_t len;
-
   func_hash_single hash_single;
   func_hash_new hash_new;
   func_hash_free hash_free;
@@ -51,6 +49,11 @@ enum SSH_MAC_TYPE ssh_mac_get_by_name(const char *name)
   return ssh_mac_get_by_name_n((uint8_t *) name, strlen(name));
 }
 
+enum SSH_MAC_TYPE ssh_mac_get_by_name_str(const struct SSH_STRING *name)
+{
+  return ssh_mac_get_by_name_n(name->str, name->len);
+}
+
 enum SSH_MAC_TYPE ssh_mac_get_by_name_n(const uint8_t *name, size_t name_len)
 {
   int i;
@@ -62,6 +65,19 @@ enum SSH_MAC_TYPE ssh_mac_get_by_name_n(const uint8_t *name, size_t name_len)
 
   ssh_set_error("invalid mac name: '%.*s'", (int) name_len, name);
   return SSH_MAC_INVALID;
+}
+
+int ssh_mac_get_supported_algos(struct SSH_BUFFER *ret)
+{
+  int i;
+
+  ssh_buf_clear(ret);
+  for (i = 0; i < sizeof(mac_algos)/sizeof(mac_algos[0]); i++) {
+    if ((i > 0 && ssh_buf_append_u8(ret, ',') < 0)
+        || ssh_buf_append_data(ret, (uint8_t *) mac_algos[i].name, strlen(mac_algos[i].name)) < 0)
+      return -1;
+  }
+  return 0;
 }
 
 static const struct MAC_ALGO *mac_get_algo(enum SSH_MAC_TYPE type)
@@ -138,7 +154,7 @@ struct SSH_MAC_CTX *ssh_mac_new(enum SSH_MAC_TYPE type, const struct SSH_STRING 
   block_size = ssh_hash_get_block_size(algo->hash_type);
   if (block_size < 0)
     return NULL;
-  
+
   mac = ssh_alloc(sizeof(struct SSH_MAC_CTX));
   if (mac == NULL)
     return NULL;

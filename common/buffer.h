@@ -64,6 +64,7 @@ void ssh_buf_reader_rewind(struct SSH_BUF_READER *buf);
 int ssh_buf_read_u8(struct SSH_BUF_READER *buf, uint8_t *ret_val);
 int ssh_buf_read_u32(struct SSH_BUF_READER *buf, uint32_t *ret_val);
 int ssh_buf_read_string(struct SSH_BUF_READER *buf, struct SSH_STRING *ret_val);
+int ssh_buf_read_until(struct SSH_BUF_READER *buf, uint8_t sentinel, struct SSH_STRING *ret_val);
 int ssh_buf_read_skip(struct SSH_BUF_READER *buf, size_t len);
 
 #endif /* BUFFER_H_FILE */

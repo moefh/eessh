@@ -38,6 +38,11 @@ enum SSH_CIPHER_TYPE ssh_cipher_get_by_name(const char *name)
   return ssh_cipher_get_by_name_n((uint8_t *) name, strlen(name));
 }
 
+enum SSH_CIPHER_TYPE ssh_cipher_get_by_name_str(const struct SSH_STRING *name)
+{
+  return ssh_cipher_get_by_name_n(name->str, name->len);
+}
+
 enum SSH_CIPHER_TYPE ssh_cipher_get_by_name_n(const uint8_t *name, size_t name_len)
 {
   int i;
@@ -49,6 +54,19 @@ enum SSH_CIPHER_TYPE ssh_cipher_get_by_name_n(const uint8_t *name, size_t name_l
 
   ssh_set_error("invalid cipher name: '%.*s'", (int) name_len, name);
   return SSH_CIPHER_INVALID;
+}
+
+int ssh_cipher_get_supported_algos(struct SSH_BUFFER *ret)
+{
+  int i;
+
+  ssh_buf_clear(ret);
+  for (i = 0; i < sizeof(cipher_algos)/sizeof(cipher_algos[0]); i++) {
+    if ((i > 0 && ssh_buf_append_u8(ret, ',') < 0)
+        || ssh_buf_append_data(ret, (uint8_t *) cipher_algos[i].name, strlen(cipher_algos[i].name)) < 0)
+      return -1;
+  }
+  return 0;
 }
 
 static const struct CIPHER_ALGO *cipher_get_algo(enum SSH_CIPHER_TYPE type)
@@ -119,15 +137,5 @@ void ssh_cipher_free(struct SSH_CIPHER_CTX *ctx)
 
 int ssh_cipher_crypt(struct SSH_CIPHER_CTX *ctx, uint8_t *out, uint8_t *data, uint32_t len)
 {
-#if 0
-  uint32_t cur;
-
-  for (cur = 0; cur < len; cur += 16) {
-    if (ctx->algo->crypt(ctx->ctx, out + cur, data + cur, 16) < 0)
-      return -1;
-  }
-  return 0;
-#else
   return ctx->algo->crypt(ctx->ctx, out, data, len);
-#endif
 }

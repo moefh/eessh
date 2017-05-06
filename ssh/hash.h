@@ -8,7 +8,7 @@
 #include "common/buffer.h"
 #include "crypto/algorithms.h"
 
-#define SSH_HASH_MAX_LEN 64
+#define SSH_HASH_MAX_LEN 256
 
 enum SSH_HASH_TYPE ssh_hash_get_by_name(const char *name);
 int ssh_hash_get_len(enum SSH_HASH_TYPE type);

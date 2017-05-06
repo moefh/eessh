@@ -29,20 +29,9 @@ static const struct KEX_ALGO {
   enum SSH_HASH_TYPE hash_type;
   func_kex_run run;
 } kex_algos[] = {
-  { "diffie-hellman-group1-sha1",  SSH_KEX_DH_GROUP_1,  SSH_HASH_SHA1, ssh_kex_dh_run },
   { "diffie-hellman-group14-sha1", SSH_KEX_DH_GROUP_14, SSH_HASH_SHA1, ssh_kex_dh_run },
+  { "diffie-hellman-group1-sha1",  SSH_KEX_DH_GROUP_1,  SSH_HASH_SHA1, ssh_kex_dh_run },
 };
-
-static const char kex_algo[] = "diffie-hellman-group14-sha1";
-static const char server_host_key_algo[] = "ssh-rsa";
-static const char encryption_algo_cts[] = "aes128-ctr";
-static const char encryption_algo_stc[] = "aes128-ctr";
-static const char mac_algo_cts[] = "hmac-sha2-256";
-static const char mac_algo_stc[] = "hmac-sha2-256";
-static const char compression_algo_cts[] = "none";
-static const char compression_algo_stc[] = "none";
-static const char language_cts[] = "";
-static const char language_stc[] = "";
 
 enum SSH_KEX_TYPE ssh_kex_get_by_name_n(const uint8_t *name, size_t name_len)
 {
@@ -62,78 +51,21 @@ enum SSH_KEX_TYPE ssh_kex_get_by_name(const char *name)
   return ssh_kex_get_by_name_n((const uint8_t *) name, strlen(name));
 }
 
-static int kex_save_kexinit_data(struct SSH_BUFFER *dest, uint8_t *data, size_t len)
+enum SSH_KEX_TYPE ssh_kex_get_by_name_str(const struct SSH_STRING *name)
 {
-  if (len <= data[4] + 1) {
-    ssh_set_error("bad packet length to save");
-    return -1;
-  }
-  ssh_buf_clear(dest);
-  return ssh_buf_append_data(dest, data + 5, len - data[4] - 5);
+  return ssh_kex_get_by_name_n(name->str, name->len);
 }
 
-static int kex_send_init_msg(struct SSH_CONN *conn, struct SSH_KEX *kex)
+int ssh_kex_get_supported_algos(struct SSH_BUFFER *ret)
 {
-  uint8_t *p;
-  struct SSH_BUFFER *pack;
+  int i;
 
-  pack = ssh_conn_new_packet(conn);
-  if (pack == NULL)
-    return -1;
-    
-  if (ssh_buf_write_u8(pack, SSH_MSG_KEXINIT))
-    return -1;
-
-  // cookie
-  p = ssh_buf_get_write_pointer(pack, 16);
-  if (p == NULL)
-    return -1;
-  if (crypto_random_gen(p, 16) < 0)
-    return -1;
-
-  if (ssh_buf_write_cstring(pack, kex_algo)
-      || ssh_buf_write_cstring(pack, server_host_key_algo)
-      || ssh_buf_write_cstring(pack, encryption_algo_cts)
-      || ssh_buf_write_cstring(pack, encryption_algo_stc)
-      || ssh_buf_write_cstring(pack, mac_algo_cts)
-      || ssh_buf_write_cstring(pack, mac_algo_stc)
-      || ssh_buf_write_cstring(pack, compression_algo_cts)
-      || ssh_buf_write_cstring(pack, compression_algo_stc)
-      || ssh_buf_write_cstring(pack, language_cts)
-      || ssh_buf_write_cstring(pack, language_stc))
-    return -1;
-
-  if (ssh_buf_write_u8(pack, 0)        // first_kex_packet_follows
-      || ssh_buf_write_u32(pack, 0))   // reserved
-    return -1;
-
-  ssh_log("* sending SSH_MSG_KEXINIT...\n");
-  
-  if (ssh_conn_send_packet(conn) < 0)
-    return -1;
-  if (kex_save_kexinit_data(&kex->client_kexinit, pack->data, pack->len) < 0)
-    return -1;
-  dump_kexinit_packet("sent packet", pack, 0);
-  return 0;
-}
-
-static int kex_recv_init_msg(struct SSH_CONN *conn, struct SSH_KEX *kex)
-{
-  struct SSH_BUF_READER *pack;
-
-  pack = ssh_conn_recv_packet_skip_ignore(conn);
-  if (pack == NULL)
-    return -1;
-  if (ssh_packet_get_type(pack) != SSH_MSG_KEXINIT) {
-    ssh_set_error("unexpected packet of type %d (expected SSH_MSG_KEXINIT=%d)", ssh_packet_get_type(pack), SSH_MSG_KEXINIT);
-    return -1;
+  ssh_buf_clear(ret);
+  for (i = 0; i < sizeof(kex_algos)/sizeof(kex_algos[0]); i++) {
+    if ((i > 0 && ssh_buf_append_u8(ret, ',') < 0)
+        || ssh_buf_append_data(ret, (uint8_t *) kex_algos[i].name, strlen(kex_algos[i].name)) < 0)
+      return -1;
   }
-  if (kex_save_kexinit_data(&kex->server_kexinit, pack->data, pack->len) < 0)
-    return -1;
-  
-  ssh_log("* got SSH_MSG_KEXINIT:\n");
-  dump_kexinit_packet_reader("received packet", pack, 0);
-
   return 0;
 }
 
@@ -148,6 +80,76 @@ static const struct KEX_ALGO *kex_get_algo(enum SSH_KEX_TYPE type)
 
   ssh_set_error("invalid key exchange type: %d", type);
   return NULL;
+}
+
+static int kex_save_kexinit_data(struct SSH_BUFFER *dest, uint8_t *data, size_t len)
+{
+  if (len <= data[4] + 1) {
+    ssh_set_error("bad packet length to save");
+    return -1;
+  }
+  ssh_buf_clear(dest);
+  return ssh_buf_append_data(dest, data + 5, len - data[4] - 5);
+}
+
+/* Send SSH_MSG_KEXINIT msg */
+static int kex_send_init_msg(struct SSH_CONN *conn, struct SSH_KEX *kex)
+{
+  uint8_t *p;
+  struct SSH_BUFFER *pack;
+  struct SSH_BUFFER algo_list;
+
+  if ((pack = ssh_conn_new_packet(conn)) == NULL)
+    return -1;
+
+  algo_list = ssh_buf_new();
+  if (ssh_buf_write_u8(pack, SSH_MSG_KEXINIT) < 0
+      || (p = ssh_buf_get_write_pointer(pack, 16)) == NULL
+      || crypto_random_gen(p, 16) < 0
+      || ssh_kex_get_supported_algos(&algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_pubkey_get_supported_algos(&algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_cipher_get_supported_algos(&algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_mac_get_supported_algos(&algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_buf_write_buffer(pack, &algo_list) < 0
+      || ssh_buf_write_cstring(pack, "none") < 0
+      || ssh_buf_write_cstring(pack, "none") < 0
+      || ssh_buf_write_cstring(pack, "") < 0
+      || ssh_buf_write_cstring(pack, "") < 0
+      || ssh_buf_write_u8(pack, 0) < 0        // first_kex_packet_follows
+      || ssh_buf_write_u32(pack, 0) < 0       // reserved
+      || ssh_conn_send_packet(conn) < 0) {
+    ssh_buf_free(&algo_list);
+    return -1;
+  }
+  ssh_buf_free(&algo_list);
+  
+  if (kex_save_kexinit_data(&kex->client_kexinit, pack->data, pack->len) < 0)
+    return -1;
+  dump_kexinit_packet("sent packet", pack, 0);
+  return 0;
+}
+
+/* Receive SSH_MSG_KEXINIT msg */
+static int kex_recv_init_msg(struct SSH_CONN *conn, struct SSH_KEX *kex)
+{
+  struct SSH_BUF_READER *pack;
+
+  if ((pack = ssh_conn_recv_packet_skip_ignore(conn)) == NULL)
+    return -1;
+  if (ssh_packet_get_type(pack) != SSH_MSG_KEXINIT) {
+    ssh_set_error("unexpected packet of type %d (expected SSH_MSG_KEXINIT=%d)", ssh_packet_get_type(pack), SSH_MSG_KEXINIT);
+    return -1;
+  }
+  if (kex_save_kexinit_data(&kex->server_kexinit, pack->data, pack->len) < 0)
+    return -1;
+  
+  dump_kexinit_packet_reader("received packet", pack, 0);
+  return 0;
 }
 
 /*
@@ -179,7 +181,7 @@ static int gen_key(struct SSH_STRING *ret_key, uint32_t gen_key_len, uint8_t key
   }
 
   hash = ssh_buf_new();
-  if (ssh_buf_grow(&hash, SSH_HASH_MAX_LEN)) {
+  if (ssh_buf_grow(&hash, SSH_HASH_MAX_LEN) < 0) {
     ssh_buf_free(&data);
     ssh_buf_free(&hash);
     return -1;
@@ -205,7 +207,7 @@ static int gen_key(struct SSH_STRING *ret_key, uint32_t gen_key_len, uint8_t key
       return -1;
     }
     
-    if (ssh_buf_grow(&hash, SSH_HASH_MAX_LEN)) {
+    if (ssh_buf_grow(&hash, SSH_HASH_MAX_LEN) < 0) {
       ssh_buf_free(&data);
       ssh_buf_free(&hash);
       return -1;
@@ -268,10 +270,8 @@ static int kex_generate_keys(struct SSH_CONN *conn, struct SSH_KEX *kex)
       || ssh_conn_set_mac(conn, SSH_CONN_CTS, kex->mac_type_cts, &mac_key_cts) < 0
       || ssh_conn_set_mac(conn, SSH_CONN_STC, kex->mac_type_stc, &mac_key_stc) < 0)
     ret = -1;
-  else {
+  else
     ret = 0;
-    ssh_log("* keys set\n");
-  }
 
   ssh_str_free(&cipher_iv_cts);
   ssh_str_free(&cipher_iv_stc);
@@ -282,30 +282,105 @@ static int kex_generate_keys(struct SSH_CONN *conn, struct SSH_KEX *kex)
   return ret;
 }
 
-static int ssh_kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
+static int choose_algo(struct SSH_STRING *ret, struct SSH_BUF_READER *client_pack, struct SSH_BUF_READER *server_pack)
+{
+  struct SSH_STRING client_algos;
+  struct SSH_STRING server_algos;
+  struct SSH_BUF_READER client_algos_reader;
+  struct SSH_BUF_READER server_algos_reader;
+  struct SSH_STRING client_algo;
+  struct SSH_STRING server_algo;
+
+  if (ssh_buf_read_string(client_pack, &client_algos) < 0
+      || ssh_buf_read_string(server_pack, &server_algos) < 0)
+    return -1;
+  client_algos_reader = ssh_buf_reader_new_from_string(&client_algos);
+  server_algos_reader = ssh_buf_reader_new_from_string(&server_algos);
+
+  while (1) {
+    if (ssh_buf_read_until(&client_algos_reader, ',', &client_algo) < 0
+        || client_algo.len == 0)
+      break;
+    ssh_buf_reader_rewind(&server_algos_reader);
+    while (1) {
+      if (ssh_buf_read_until(&server_algos_reader, ',', &server_algo) < 0
+          || server_algo.len == 0)
+        break;
+      if (client_algo.len == server_algo.len
+          && memcmp(client_algo.str, server_algo.str, client_algo.len) == 0) {
+        *ret = client_algo;
+        ssh_log("** chosen algo: %.*s\n", (int) ret->len, ret->str);
+        return 0;
+      }
+    }
+  }
+
+  ssh_set_error("no shared algorithms");
+  return -1;
+}
+
+static int kex_start(struct SSH_CONN *conn, struct SSH_KEX *kex)
 {
   const struct KEX_ALGO *algo;
+  struct SSH_BUF_READER client_kexinit;
+  struct SSH_BUF_READER server_kexinit;
+  struct SSH_STRING kex_algo, server_host_key_algo;
+  struct SSH_STRING encryption_cts_algo, encryption_stc_algo;
+  struct SSH_STRING mac_cts_algo, mac_stc_algo;
 
   if (kex_send_init_msg(conn, kex) < 0
       || kex_recv_init_msg(conn, kex) < 0)
     return -1;
 
-  // TODO: choose algorithm based on client and server lists in KEX_INIT packets
-  if ((kex->type = ssh_kex_get_by_name(kex_algo)) == SSH_KEX_INVALID
-      || (kex->pubkey_type = ssh_pubkey_get_by_name(server_host_key_algo)) == SSH_PUBKEY_INVALID
-      || (kex->cipher_type_cts = ssh_cipher_get_by_name(encryption_algo_cts)) == SSH_CIPHER_INVALID
-      || (kex->cipher_type_stc = ssh_cipher_get_by_name(encryption_algo_stc)) == SSH_CIPHER_INVALID
-      || (kex->mac_type_cts = ssh_mac_get_by_name(mac_algo_cts)) == SSH_MAC_INVALID
-      || (kex->mac_type_stc = ssh_mac_get_by_name(mac_algo_stc)) == SSH_MAC_INVALID) {
-    ssh_set_error("no algorithms shared with server");
+  // choose algorithm based on client and server lists in KEX_INIT packets
+  client_kexinit = ssh_buf_reader_new_from_buffer(&kex->client_kexinit);
+  server_kexinit = ssh_buf_reader_new_from_buffer(&kex->server_kexinit);
+
+  // skip packet type (1) and cookie (16)
+  if (ssh_buf_read_skip(&client_kexinit, 1 + 16) < 0
+      || ssh_buf_read_skip(&server_kexinit, 1 + 16) < 0)
     return -1;
-  }
+
+  if (choose_algo(&kex_algo, &client_kexinit, &server_kexinit) < 0
+      || choose_algo(&server_host_key_algo, &client_kexinit, &server_kexinit) < 0
+      || choose_algo(&encryption_cts_algo, &client_kexinit, &server_kexinit) < 0
+      || choose_algo(&encryption_stc_algo, &client_kexinit, &server_kexinit) < 0
+      || choose_algo(&mac_cts_algo, &client_kexinit, &server_kexinit) < 0
+      || choose_algo(&mac_stc_algo, &client_kexinit, &server_kexinit) < 0
+      || (kex->type = ssh_kex_get_by_name_str(&kex_algo)) == SSH_KEX_INVALID
+      || (kex->pubkey_type = ssh_pubkey_get_by_name_str(&server_host_key_algo)) == SSH_PUBKEY_INVALID
+      || (kex->cipher_type_cts = ssh_cipher_get_by_name_str(&encryption_cts_algo)) == SSH_CIPHER_INVALID
+      || (kex->cipher_type_stc = ssh_cipher_get_by_name_str(&encryption_stc_algo)) == SSH_CIPHER_INVALID
+      || (kex->mac_type_cts = ssh_mac_get_by_name_str(&mac_cts_algo)) == SSH_MAC_INVALID
+      || (kex->mac_type_stc = ssh_mac_get_by_name_str(&mac_stc_algo)) == SSH_MAC_INVALID)
+    return -1;
 
   if ((algo = kex_get_algo(kex->type)) == NULL)
     return -1;
   kex->hash_type = algo->hash_type;
   
   return algo->run(conn, kex);
+}
+
+/* exchange SSH_MSG_NEWKEYS messages with server */
+static int kex_exchange_newkeys_msg(struct SSH_CONN *conn)
+{
+  struct SSH_BUFFER *wpack;
+  struct SSH_BUF_READER *rpack;
+
+  if ((wpack = ssh_conn_new_packet(conn)) == NULL
+      || ssh_buf_write_u8(wpack, SSH_MSG_NEWKEYS) < 0
+      || ssh_conn_send_packet(conn) < 0)
+    return -1;
+  
+  if ((rpack = ssh_conn_recv_packet_skip_ignore(conn)) == NULL)
+    return -1;
+  if (ssh_packet_get_type(rpack) != SSH_MSG_NEWKEYS) {
+    ssh_set_error("unexpected packet type: %d (expected SSH_MSG_NEWKEYS=%d)", ssh_packet_get_type(rpack), SSH_MSG_NEWKEYS);
+    return -1;
+  }
+  
+  return 0;
 }
 
 int ssh_kex_finish(struct SSH_CONN *conn, struct SSH_KEX *kex, struct SSH_STRING *shared_secret, struct SSH_STRING *exchange_hash)
@@ -329,7 +404,11 @@ int ssh_kex_finish(struct SSH_CONN *conn, struct SSH_KEX *kex, struct SSH_STRING
   kex->exchange_hash = *exchange_hash;
   *exchange_hash = ssh_str_new_empty();
 
-  return kex_generate_keys(conn, kex);
+  if (kex_exchange_newkeys_msg(conn) < 0
+      || kex_generate_keys(conn, kex) < 0)
+    return -1;
+
+  return 0;
 }
 
 /* ================================================================================================== */
@@ -361,15 +440,15 @@ static void kex_free(struct SSH_KEX *kex)
 int ssh_kex_run(struct SSH_CONN *conn)
 {
   struct SSH_KEX *kex;
-  int ret;
 
+  ssh_log("* starting key exchange\n");
   if ((kex = kex_new(conn)) == NULL)
     return -1;
-  //ssh_conn_set_kex(conn, kex);
-
-  ret = ssh_kex_start(conn, kex);
-
-  //ssh_conn_set_kex(conn, NULL);
+  if (kex_start(conn, kex) < 0) {
+    kex_free(kex);
+    return -1;
+  }
   kex_free(kex);
-  return ret;
+  ssh_log("* key exchange finalized\n");
+  return 0;
 }

@@ -51,10 +51,6 @@ struct SSH_CONN *ssh_conn_new(void)
 
 void ssh_conn_close(struct SSH_CONN *conn)
 {
-  ssh_stream_close(&conn->in_stream);
-  ssh_stream_close(&conn->out_stream);
-  ssh_str_free(&conn->session_id);
-  ssh_str_free(&conn->server_hostname);
   if (conn->sock >= 0) {
     close(conn->sock);
     conn->sock = -1;
@@ -63,7 +59,10 @@ void ssh_conn_close(struct SSH_CONN *conn)
 
 void ssh_conn_free(struct SSH_CONN *conn)
 {
-  ssh_conn_close(conn);
+  ssh_stream_close(&conn->in_stream);
+  ssh_stream_close(&conn->out_stream);
+  ssh_str_free(&conn->session_id);
+  ssh_str_free(&conn->server_hostname);
   ssh_free(conn);
 }
 

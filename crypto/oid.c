@@ -18,8 +18,22 @@ static const uint8_t oid_sha1[] = {
   0x03, 0x02, 0x1a, 0x05, 0x00, 0x04, 0x14
 };
 
+static const uint8_t oid_sha256[] = {
+  0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+  0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+  0x00, 0x04, 0x20,
+};
+
+static const uint8_t oid_sha512[] = {
+  0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+  0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+  0x00, 0x04, 0x40
+};
+
 static const struct OID_DATA hash_oids[] = {
-  { SSH_HASH_SHA1, oid_sha1, sizeof(oid_sha1) },
+  { SSH_HASH_SHA1,     oid_sha1,   sizeof(oid_sha1)   },
+  { SSH_HASH_SHA2_256, oid_sha256, sizeof(oid_sha256) },
+  { SSH_HASH_SHA2_512, oid_sha512, sizeof(oid_sha512) },
 };
 
 int crypto_oid_get_for_hash(enum SSH_HASH_TYPE hash_type, struct SSH_STRING *out)
@@ -33,6 +47,6 @@ int crypto_oid_get_for_hash(enum SSH_HASH_TYPE hash_type, struct SSH_STRING *out
     }
   }
 
-  ssh_set_error("unknown hash type");
+  ssh_set_error("unknown hash type for OID");
   return -1;
 }
