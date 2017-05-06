@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <sys/stat.h>
 
 #include "common/host_key_store.h"
 
@@ -144,7 +143,6 @@ int ssh_host_key_store_add(const char *filename, const char *hostname, const str
   size_t new_filename_len;
   struct ADD_HOST_DATA add_data;
   int ret;
-  mode_t old_umask;
 
   new_filename_len = snprintf(new_filename, sizeof(new_filename), "%s.%u", filename, (unsigned int) getpid());
   if (strlen(new_filename) != new_filename_len) {
@@ -152,9 +150,7 @@ int ssh_host_key_store_add(const char *filename, const char *hostname, const str
     return -1;
   }
 
-  old_umask = umask(0077);
   add_data.out = fopen(new_filename, "w");
-  umask(old_umask);
   if (add_data.out == NULL) {
     ssh_set_error("can't create temporary file");
     return -1;

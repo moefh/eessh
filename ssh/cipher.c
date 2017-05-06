@@ -29,8 +29,8 @@ static const struct CIPHER_ALGO {
   func_free free;
   func_crypt crypt;
 } cipher_algos[] = {
-  { "aes128-cbc", SSH_CIPHER_AES128_CBC, 16, 16, 16, crypto_aes_new, crypto_aes_free, crypto_aes_crypt },
   { "aes128-ctr", SSH_CIPHER_AES128_CTR, 16, 16, 16, crypto_aes_new, crypto_aes_free, crypto_aes_crypt },
+  { "aes128-cbc", SSH_CIPHER_AES128_CBC, 16, 16, 16, crypto_aes_new, crypto_aes_free, crypto_aes_crypt },
 };
 
 enum SSH_CIPHER_TYPE ssh_cipher_get_by_name(const char *name)

@@ -253,49 +253,8 @@ int ssh_conn_open(struct SSH_CONN *conn, const char *server, const char *port)
   }
 #endif
 
-  {
-    struct SSH_BUF_READER *pack = ssh_conn_recv_packet(conn);
-    if (pack == NULL) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    dump_packet_reader("received packet", pack, conn->in_stream.mac_len);
-  }
-
 #if 1
-  // send SSH_MSG_USERAUTH_REQUEST packet
-  {
-    struct SSH_BUFFER *pack;
-
-    ssh_log("* making new packet\n");
-    pack = ssh_conn_new_packet(conn);
-    if (pack == NULL) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-
-    ssh_log("* writing packet type SSH_MSG_USERAUTH_REQUEST\n");
-    if (ssh_buf_write_u8(pack, SSH_MSG_USERAUTH_REQUEST) < 0
-        || ssh_buf_write_cstring(pack, "massaro") < 0
-        || ssh_buf_write_cstring(pack, "ssh-connection") < 0
-        || ssh_buf_write_cstring(pack, "password") < 0
-        || ssh_buf_write_u8(pack, 0) < 0
-        || ssh_buf_write_cstring(pack, "123qwe") < 0) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    
-    ssh_log("* sending packet\n");
-    if (ssh_conn_send_packet(conn) < 0) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-    ssh_log("* packet sent\n");
-  }
-#endif
-  
-#if 1
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 1; i++) {
     struct SSH_BUF_READER *pack;
 
     pack = ssh_conn_recv_packet(conn);
