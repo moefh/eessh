@@ -6,18 +6,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ssh/kex_dh.h"
-#include "ssh/kex_internal.h"
+#include "ssh/kex_dh_i.h"
+
+#include "ssh/kex_i.h"
+#include "ssh/connection_i.h"
+#include "ssh/hash_i.h"
+#include "ssh/pubkey_i.h"
+#include "ssh/connection_i.h"
 
 #include "common/error.h"
 #include "common/debug.h"
 #include "ssh/debug.h"
-#include "ssh/hash.h"
-#include "ssh/pubkey.h"
-#include "ssh/kex.h"
-#include "ssh/connection.h"
 #include "ssh/ssh_constants.h"
 #include "crypto/dh.h"
+
+#if !DEBUG_KEX
+#include "common/disable_debug_i.h"
+#endif
 
 const static struct DH_ALGO {
   enum SSH_KEX_TYPE type;

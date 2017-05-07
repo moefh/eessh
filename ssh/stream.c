@@ -3,13 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ssh/stream.h"
+#include "ssh/stream_i.h"
+
+#include "common/network_i.h"
+#include "ssh/hash_i.h"
 
 #include "common/error.h"
 #include "common/debug.h"
-#include "common/network.h"
 #include "crypto/random.h"
-#include "ssh/hash.h"
 #include "ssh/debug.h"
 
 #define MIN(a,b) (((a) < (b)) ? (a) : (b))

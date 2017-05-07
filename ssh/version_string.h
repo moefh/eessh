@@ -18,7 +18,4 @@ struct SSH_VERSION_STRING {
   struct SSH_STRING comments;
 };
 
-int ssh_version_string_read(struct SSH_VERSION_STRING *ver_str, int sock, struct SSH_BUFFER *rest);
-int ssh_version_string_build(struct SSH_VERSION_STRING *ver_str, const char *software, const char *comments);
-
 #endif /* VERSION_STRING_H_FILE */

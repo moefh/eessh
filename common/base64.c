@@ -14,7 +14,7 @@ const uint8_t base64_table[] =
   "0123456789+/";
 
 
-char *base64_encode(uint8_t *data, size_t data_len)
+char *ssh_base64_encode(uint8_t *data, size_t data_len)
 {
   uint8_t *cur = (uint8_t *) data;
   uint8_t *end = (uint8_t *) data + (data_len/3)*3;

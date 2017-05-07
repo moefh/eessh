@@ -1,7 +1,7 @@
-/* pubkey.h */
+/* pubkey_i.h */
 
-#ifndef PUBKEY_H_FILE
-#define PUBKEY_H_FILE
+#ifndef PUBKEY_I_H_FILE
+#define PUBKEY_I_H_FILE
 
 #include <stdint.h>
 
@@ -15,4 +15,4 @@ int ssh_pubkey_get_supported_algos(struct SSH_BUFFER *ret);
 
 int ssh_pubkey_verify_signature(enum SSH_PUBKEY_TYPE key_type, struct SSH_STRING *key, struct SSH_STRING *signature, struct SSH_STRING *data);
 
-#endif /* PUBKEY_H_FILE */
+#endif /* PUBKEY_I_H_FILE */

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "ssh/hash.h"
+#include "ssh/hash_i.h"
 
 #include "common/error.h"
 

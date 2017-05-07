@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
-#include "common/network.h"
+#include "common/network_i.h"
 
 #include "common/error.h"
 

@@ -5,11 +5,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#include "ssh/version_string.h"
+#include "ssh/version_string_i.h"
+
+#include "common/network_i.h"
 
 #include "common/error.h"
 #include "common/debug.h"
-#include "common/network.h"
 
 #define VERSION_BUF_LEN 512
 

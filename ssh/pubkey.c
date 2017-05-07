@@ -4,9 +4,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "ssh/pubkey.h"
+#include "ssh/pubkey_i.h"
 
-#include "ssh/hash.h"
+#include "ssh/hash_i.h"
+
 #include "common/error.h"
 #include "common/debug.h"
 #include "crypto/rsa.h"

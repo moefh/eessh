@@ -1,7 +1,7 @@
-/* mac.h */
+/* mac_i.h */
 
-#ifndef MAC_H_FILE
-#define MAC_H_FILE
+#ifndef MAC_I_H_FILE
+#define MAC_I_H_FILE
 
 #include <stdint.h>
 
@@ -29,4 +29,4 @@ struct SSH_MAC_CTX *ssh_mac_new(enum SSH_MAC_TYPE type, const struct SSH_STRING 
 void ssh_mac_free(struct SSH_MAC_CTX *mac);
 int ssh_mac_compute(struct SSH_MAC_CTX *mac, uint8_t *out, uint32_t seq_num, const uint8_t *data, uint32_t len);
 
-#endif /* MAC_H_FILE */
+#endif /* MAC_I_H_FILE */

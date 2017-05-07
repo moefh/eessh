@@ -1,7 +1,7 @@
 /* hash.h */
 
-#ifndef HASH_H_FILE
-#define HASH_H_FILE
+#ifndef HASH_I_H_FILE
+#define HASH_I_H_FILE
 
 #include <stdint.h>
 
@@ -15,4 +15,4 @@ int ssh_hash_get_len(enum SSH_HASH_TYPE type);
 int ssh_hash_get_block_size(enum SSH_HASH_TYPE type);
 int ssh_hash_compute(enum SSH_HASH_TYPE type, struct SSH_STRING *digest, const struct SSH_STRING *data);
 
-#endif /* HASH_H_FILE */
+#endif /* HASH_I_H_FILE */

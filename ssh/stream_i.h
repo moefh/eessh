@@ -1,11 +1,11 @@
-/* stream.h */
+/* stream_i.h */
 
-#ifndef STREAM_H_FILE
-#define STREAM_H_FILE
+#ifndef STREAM_I_H_FILE
+#define STREAM_I_H_FILE
 
 #include "common/buffer.h"
-#include "ssh/cipher.h"
-#include "ssh/mac.h"
+#include "ssh/cipher_i.h"
+#include "ssh/mac_i.h"
 
 #include <stdint.h>
 
@@ -35,4 +35,4 @@ int ssh_stream_recv_packet(struct SSH_STREAM *stream, int sock);
 
 struct SSH_BUFFER *ssh_stream_new_packet(struct SSH_STREAM *stream);
 
-#endif /* STREAM_H_FILE */
+#endif /* STREAM_I_H_FILE */

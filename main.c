@@ -14,15 +14,22 @@
 
 static int term_read_password(char *password, size_t max_len)
 {
-  struct termios term, old;
+  struct termios old_term;
+  int disable_echo;
   char *ret;
 
-  tcgetattr(STDIN_FILENO, &old);
-  term = old;
-  term.c_lflag &= ~ECHO;
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+  disable_echo = isatty(STDIN_FILENO);
+  if (disable_echo) {
+    struct termios term;
+
+    tcgetattr(STDIN_FILENO, &old_term);
+    term = old_term;
+    term.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &term);
+  }
   ret = fgets(password, max_len, stdin);
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &old);
+  if (disable_echo)
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_term);
 
   if (ret == NULL)
     return -1;
@@ -36,9 +43,6 @@ static int term_read_password(char *password, size_t max_len)
 
 static int read_password(const char *hostname, const char *username, char *password, size_t max_len, int retry)
 {
-  if (! isatty(STDIN_FILENO))
-    return -1;
-  
   if (retry)
     printf("Bad password, try again.\n");
   printf("Password for %s: ", username);
@@ -124,7 +128,7 @@ int main(int argc, char **argv)
   if (ssh_init(0) < 0) {
     fprintf(stderr, "ERROR: %s\n", ssh_get_error());
     return 1;
-  }    
+  }
 
   conn = ssh_conn_new();
   if (conn == NULL)

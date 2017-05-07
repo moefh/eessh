@@ -49,7 +49,7 @@ static int host_data_create(struct HOST_DATA *host_data, const char *hostname, c
   }
   memcpy(host_data->key_type, key_type.str, key_type.len);
   
-  host_data->host_key = base64_encode(host_key->str, host_key->len);
+  host_data->host_key = ssh_base64_encode(host_key->str, host_key->len);
   if (host_data->host_key == NULL) {
     ssh_free(host_data->key_type);
     return -1;

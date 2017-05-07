@@ -7,14 +7,19 @@
 
 #include <stdlib.h>
 
-#include "ssh/userauth.h"
+#include "ssh/userauth_i.h"
+
+#include "ssh/connection_i.h"
 
 #include "common/error.h"
 #include "common/debug.h"
 #include "common/buffer.h"
 #include "ssh/debug.h"
 #include "ssh/ssh_constants.h"
-#include "ssh/connection.h"
+
+#if !DEBUG_USERAUTH
+#include "disable_debug.h"
+#endif
 
 #define MAX_PASSWORD_TRIES 3
 
@@ -88,7 +93,7 @@ static int userauth_method_password(struct SSH_CONN *conn, enum SSH_USERAUTH_RES
   struct SSH_BUFFER *pack;
   struct SSH_STRING server_hostname;
   struct SSH_STRING username;
-  ssh_password_reader password_reader;
+  ssh_conn_password_reader password_reader;
   char password[256];
   int num_tries;
 

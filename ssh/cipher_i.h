@@ -1,7 +1,7 @@
-/* cipher.h */
+/* cipher_i.h */
 
-#ifndef CIPHER_H_FILE
-#define CIPHER_H_FILE
+#ifndef CIPHER_I_H_FILE
+#define CIPHER_I_H_FILE
 
 #include <stdint.h>
 
@@ -23,4 +23,4 @@ struct SSH_CIPHER_CTX *ssh_cipher_new(enum SSH_CIPHER_TYPE type, enum SSH_CIPHER
 void ssh_cipher_free(struct SSH_CIPHER_CTX *ctx);
 int ssh_cipher_crypt(struct SSH_CIPHER_CTX *ctx, uint8_t *out, uint8_t *data, uint32_t len);
 
-#endif /* CIPHER_H_FILE */
+#endif /* CIPHER_I_H_FILE */

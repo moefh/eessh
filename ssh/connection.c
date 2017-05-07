@@ -8,19 +8,25 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "ssh/connection.h"
+#include "ssh/connection_i.h"
+
+#include "common/network_i.h"
+#include "ssh/version_string_i.h"
+#include "ssh/kex_i.h"
+#include "ssh/userauth_i.h"
 
 #include "common/error.h"
 #include "common/alloc.h"
 #include "common/debug.h"
-#include "common/network.h"
 #include "ssh/debug.h"
 #include "ssh/ssh_constants.h"
-#include "ssh/version_string.h"
-#include "ssh/kex.h"
-#include "ssh/userauth.h"
+
+#if !DEBUG_CONN
+#include "common/disable_debug_i.h"
+#endif
 
 #define CLIENT_SOFTWARE "eessh_0.1"
+#define MAX_CHANNELS 4
 
 struct SSH_CONN {
   int sock;
@@ -31,11 +37,12 @@ struct SSH_CONN {
   struct SSH_STREAM in_stream;
   struct SSH_STREAM out_stream;
   struct SSH_BUF_READER last_pack_read;
+  struct SsH_CHANNEL *channels[MAX_CHANNELS];
 
-  ssh_host_identity_checker server_identity_checker;
+  ssh_conn_host_identity_checker server_identity_checker;
 
   struct SSH_STRING username;
-  ssh_password_reader password_reader;
+  ssh_conn_password_reader password_reader;
 };
 
 struct SSH_CONN *ssh_conn_new(void)
@@ -126,7 +133,7 @@ struct SSH_STRING *ssh_conn_get_session_id(struct SSH_CONN *conn)
   return &conn->session_id;
 }
 
-void ssh_conn_set_server_identity_checker(struct SSH_CONN *conn, ssh_host_identity_checker checker)
+void ssh_conn_set_server_identity_checker(struct SSH_CONN *conn, ssh_conn_host_identity_checker checker)
 {
   conn->server_identity_checker = checker;
 }
@@ -151,12 +158,12 @@ struct SSH_STRING ssh_conn_get_username(struct SSH_CONN *conn)
   return conn->username;
 }
 
-void ssh_conn_set_password_reader(struct SSH_CONN *conn, ssh_password_reader reader)
+void ssh_conn_set_password_reader(struct SSH_CONN *conn, ssh_conn_password_reader reader)
 {
   conn->password_reader = reader;
 }
 
-ssh_password_reader ssh_conn_get_password_reader(struct SSH_CONN *conn)
+ssh_conn_password_reader ssh_conn_get_password_reader(struct SSH_CONN *conn)
 {
   return conn->password_reader;
 }
@@ -228,6 +235,7 @@ int ssh_conn_open(struct SSH_CONN *conn, const char *server, const char *port)
     return -1;
   
   ssh_log("* connecting to server %s port %s\n", server, port);
+  
   conn->sock = ssh_net_connect(server, port);
   if (conn->sock < 0
       || conn_setup(conn) < 0) {
@@ -298,7 +306,7 @@ struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn)
       continue;
 
     case SSH_MSG_DISCONNECT:
-      ssh_log("**** RECEIVED SSH_MSG_DISCONNECT ****\n");
+      ssh_log("* RECEIVED SSH_MSG_DISCONNECT\n");
       if (ssh_buf_read_u32(pack, &reason_code) >= 0)
         ssh_set_error("server disconnect (%s)", ssh_const_get_disconnect_reason(reason_code));
       else

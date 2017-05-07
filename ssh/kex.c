@@ -9,20 +9,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ssh/kex.h"
-#include "ssh/kex_internal.h"
+#include "ssh/kex_i.h"
 
-#include "ssh/kex_dh.h"
+#include "ssh/kex_dh_i.h"
+#include "ssh/connection_i.h"
+#include "ssh/hash_i.h"
+#include "ssh/pubkey_i.h"
 
 #include "common/error.h"
 #include "common/alloc.h"
 #include "common/debug.h"
 #include "ssh/ssh_constants.h"
 #include "ssh/debug.h"
-#include "ssh/hash.h"
-#include "ssh/pubkey.h"
 #include "crypto/algorithms.h"
 #include "crypto/random.h"
+
+#if !DEBUG_KEX
+#include "common/disable_debug_i.h"
+#endif
 
 typedef int (*func_kex_run)(struct SSH_CONN *conn, struct SSH_KEX *kex);
 

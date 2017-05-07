@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ssh/cipher.h"
+#include "ssh/cipher_i.h"
 
 #include "common/error.h"
 #include "common/alloc.h"

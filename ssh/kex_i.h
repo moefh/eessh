@@ -1,12 +1,20 @@
-/* kex_internal.h */
+/* kex_i.h */
 
-#ifndef KEX_INTERNAL_H_FILE
-#define KEX_INTERNAL_H_FILE
+#ifndef KEX_I_H_FILE
+#define KEX_I_H_FILE
 
 #include <stdint.h>
 
 #include "common/buffer.h"
+#include "crypto/algorithms.h"
+#include "ssh/mac_i.h"
 
+enum SSH_KEX_TYPE {
+  SSH_KEX_DH_GROUP_1,
+  SSH_KEX_DH_GROUP_14,
+
+  SSH_KEX_INVALID
+};
 struct SSH_KEX {
   uint8_t first_kex_packet_follows;
   enum SSH_KEX_TYPE type;
@@ -22,6 +30,12 @@ struct SSH_KEX {
   struct SSH_BUFFER client_kexinit;
 };
 
+enum SSH_KEX_TYPE ssh_kex_get_by_name_n(const uint8_t *name, size_t len);
+enum SSH_KEX_TYPE ssh_kex_get_by_name(const char *name);
+
+struct SSH_CONN;
+
+int ssh_kex_run(struct SSH_CONN *conn);
 int ssh_kex_finish(struct SSH_CONN *conn, struct SSH_KEX *kex, struct SSH_STRING *shared_secret, struct SSH_STRING *exchange_hash);
 
-#endif /* KEX_INTERNAL_H_FILE */
+#endif /* KEX_I_H_FILE */

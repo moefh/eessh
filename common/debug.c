@@ -13,9 +13,7 @@ void ssh_log(const char *fmt, ...)
   va_list ap;
   
   va_start(ap, fmt);
-#if 1
   vprintf(fmt, ap);
-#endif
   va_end(ap);
 }
 

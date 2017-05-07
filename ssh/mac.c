@@ -3,13 +3,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "ssh/mac.h"
+#include "ssh/mac_i.h"
+
+#include "ssh/hash_i.h"
 
 #include "common/error.h"
 #include "common/alloc.h"
 #include "crypto/algorithms.h"
 #include "crypto/sha2.h"
-#include "ssh/hash.h"
 
 typedef struct CRYPTO_HASH_CTX *(*func_hash_new)(uint32_t bits);
 typedef int (*func_hash_single)(enum SSH_HASH_TYPE type, void *out, uint32_t *out_len, const void *data, uint32_t len);
