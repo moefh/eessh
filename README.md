@@ -25,12 +25,14 @@ Done:
   lot of servers I've seen don't support some of those either (and no one
   seems to support `3des-cbc` anymore).
 
+- Password user authentication.
 
 Planned:
 
-- User authentication: at least `password` since it's so easy, but `publickey`
-  would be nice (and the RFC requires it).
-
 - Channels:
   - basic framework for channels: multiple channels, handle window sizes, etc.
-  - "`session`" channel for interactive ssh
+  - `session` channel for interactive ssh
+
+- Re-keying
+
+- Public Key user authentication.
