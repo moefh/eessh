@@ -14,6 +14,7 @@
 #include "ssh/version_string_i.h"
 #include "ssh/kex_i.h"
 #include "ssh/userauth_i.h"
+#include "ssh/channel_i.h"
 
 #include "common/error.h"
 #include "common/alloc.h"
@@ -26,26 +27,8 @@
 #endif
 
 #define CLIENT_SOFTWARE "eessh_0.1"
-#define MAX_CHANNELS 4
 
-struct SSH_CONN {
-  int sock;
-  struct SSH_STRING server_hostname;
-  struct SSH_VERSION_STRING client_version_string;
-  struct SSH_VERSION_STRING server_version_string;
-  struct SSH_STRING session_id;
-  struct SSH_STREAM in_stream;
-  struct SSH_STREAM out_stream;
-  struct SSH_BUF_READER last_pack_read;
-  struct SsH_CHANNEL *channels[MAX_CHANNELS];
-
-  ssh_conn_host_identity_checker server_identity_checker;
-
-  struct SSH_STRING username;
-  ssh_conn_password_reader password_reader;
-};
-
-struct SSH_CONN *ssh_conn_new(void)
+static struct SSH_CONN *conn_new(void)
 {
   struct SSH_CONN *conn = ssh_alloc(sizeof(struct SSH_CONN));
   if (conn == NULL)
@@ -65,15 +48,7 @@ struct SSH_CONN *ssh_conn_new(void)
   return conn;
 }
 
-void ssh_conn_close(struct SSH_CONN *conn)
-{
-  if (conn->sock >= 0) {
-    close(conn->sock);
-    conn->sock = -1;
-  }
-}
-
-void ssh_conn_free(struct SSH_CONN *conn)
+static void conn_free(struct SSH_CONN *conn)
 {
   ssh_stream_close(&conn->in_stream);
   ssh_stream_close(&conn->out_stream);
@@ -83,13 +58,10 @@ void ssh_conn_free(struct SSH_CONN *conn)
   ssh_free(conn);
 }
 
-int ssh_conn_set_client_software(struct SSH_CONN *conn, const char *software, const char *comments)
+void ssh_conn_close(struct SSH_CONN *conn)
 {
-  if (ssh_version_string_build(&conn->client_version_string, software, comments) < 0) {
-    conn->client_version_string.len = 0;
-    return -1;
-  }
-  return 0;
+  close(conn->sock);
+  conn_free(conn);
 }
 
 struct SSH_VERSION_STRING *ssh_conn_get_client_version_string(struct SSH_CONN *conn)
@@ -133,11 +105,6 @@ struct SSH_STRING *ssh_conn_get_session_id(struct SSH_CONN *conn)
   return &conn->session_id;
 }
 
-void ssh_conn_set_server_identity_checker(struct SSH_CONN *conn, ssh_conn_host_identity_checker checker)
-{
-  conn->server_identity_checker = checker;
-}
-
 int ssh_conn_check_server_identity(struct SSH_CONN *conn, struct SSH_STRING *server_host_key)
 {
   if (conn->server_identity_checker != NULL)
@@ -147,20 +114,9 @@ int ssh_conn_check_server_identity(struct SSH_CONN *conn, struct SSH_STRING *ser
   return -1;
 }
 
-int ssh_conn_set_username(struct SSH_CONN *conn, const char *username)
-{
-  ssh_str_free(&conn->username);
-  return ssh_str_dup_cstring(&conn->username, username);
-}
-
 struct SSH_STRING ssh_conn_get_username(struct SSH_CONN *conn)
 {
   return conn->username;
-}
-
-void ssh_conn_set_password_reader(struct SSH_CONN *conn, ssh_conn_password_reader reader)
-{
-  conn->password_reader = reader;
 }
 
 ssh_conn_password_reader ssh_conn_get_password_reader(struct SSH_CONN *conn)
@@ -190,16 +146,10 @@ int ssh_conn_send_ignore_msg(struct SSH_CONN *conn, const char *msg)
   return 0;
 }
 
-int conn_setup(struct SSH_CONN *conn)
+static int conn_setup(struct SSH_CONN *conn)
 {
   struct SSH_VERSION_STRING *server_version;
-  
-  if (conn->client_version_string.len == 0)
-    if (ssh_conn_set_client_software(conn, CLIENT_SOFTWARE, "--") < 0) {
-      ssh_set_error("internal error: can't set default software version");
-      return -1;
-    }
-  
+
   if (ssh_net_write_all(conn->sock, conn->client_version_string.buf, conn->client_version_string.len) < 0
       || ssh_net_write_all(conn->sock, "\r\n", 2) < 0)
     return -1;
@@ -223,51 +173,83 @@ int conn_setup(struct SSH_CONN *conn)
 
 static int conn_save_hostname(struct SSH_CONN *conn, const char *server, const char *port)
 {
+  if (port == NULL)
+    port = "22";
   if (ssh_str_alloc(&conn->server_hostname, strlen(server) + strlen(port) + 2) < 0)
     return -1;
   snprintf((char *) conn->server_hostname.str, conn->server_hostname.len, "%s,%s", server, port);
   return 0;
 }
 
-int ssh_conn_open(struct SSH_CONN *conn, const char *server, const char *port)
+static int conn_set_client_software(struct SSH_CONN *conn, const char *software, const char *comments)
 {
-  if (conn_save_hostname(conn, server, port) < 0)
-    return -1;
-  
-  ssh_log("* connecting to server %s port %s\n", server, port);
-  
-  conn->sock = ssh_net_connect(server, port);
-  if (conn->sock < 0
-      || conn_setup(conn) < 0) {
-    ssh_conn_close(conn);
+  if (ssh_version_string_build(&conn->client_version_string, software, comments) < 0) {
+    conn->client_version_string.len = 0;
     return -1;
   }
-
-  if (ssh_kex_run(conn) < 0) {
-    ssh_conn_close(conn);
-    return -1;
-  }
-
-  if (ssh_userauth_run(conn) < 0) {
-    ssh_conn_close(conn);
-    return -1;
-  }
-
-#if 1
-  for (int i = 0; i < 1; i++) {
-    struct SSH_BUF_READER *pack;
-
-    pack = ssh_conn_recv_packet(conn);
-    if (pack == NULL) {
-      ssh_conn_close(conn);
-      return -1;
-    }
-
-    dump_packet_reader("received packet", pack, conn->in_stream.mac_len);
-  }
-#endif
-  
   return 0;
+}
+
+static int conn_connect(struct SSH_CONN *conn, const struct SSH_CONN_CONFIG *cfg)
+{
+  const char *client_software, *client_comments, *port;
+
+  if (cfg->server == NULL) {
+    ssh_set_error("server must not be NULL");
+    return -1;
+  }
+  if (cfg->username == NULL) {
+    ssh_set_error("username must not be NULL");
+    return -1;
+  }
+  
+  if (conn_save_hostname(conn, cfg->server, cfg->port) < 0
+      || ssh_str_dup_cstring(&conn->username, cfg->username) < 0)
+    return -1;
+  conn->password_reader = cfg->password_reader;
+  conn->server_identity_checker = cfg->server_identity_checker;
+  
+  client_software = (cfg->version_software != NULL) ? cfg->version_software : CLIENT_SOFTWARE;
+  client_comments = (cfg->version_comments != NULL) ? cfg->version_comments : "--";
+  if (conn_set_client_software(conn, client_software, client_comments) < 0) {
+    ssh_set_error("bad software version string");
+    return -1;
+  }
+
+  port = (cfg->port != NULL) ? cfg->port : "22";
+  ssh_log("* connecting to server %s port %s\n", cfg->server, port);
+  
+  conn->sock = ssh_net_connect(cfg->server, port);
+  if (conn->sock < 0)
+    return -1;
+
+  if (conn_setup(conn) < 0
+      || ssh_kex_run(conn) < 0
+      || ssh_userauth_run(conn) < 0) {
+    close(conn->sock);
+    return -1;
+  }
+
+  return 0;
+}
+
+struct SSH_CONN *ssh_conn_open(const struct SSH_CONN_CONFIG *cfg)
+{
+  struct SSH_CONN *conn;
+
+  if ((conn = conn_new()) == NULL)
+    return NULL;
+
+  if (conn_connect(conn, cfg) < 0) {
+    conn_free(conn);
+    return NULL;
+  }
+  return conn;
+}
+
+int ssh_conn_run(struct SSH_CONN *conn, int num_channels, const struct SSH_CHAN_CONFIG *channel_cfgs)
+{
+  return ssh_chan_run_connection(conn, num_channels, channel_cfgs);
 }
 
 struct SSH_BUFFER *ssh_conn_new_packet(struct SSH_CONN *conn)

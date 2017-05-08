@@ -36,39 +36,21 @@ static int make_connection(int sock, const struct sockaddr *addr, socklen_t addr
 
 int ssh_net_connect(const char *server, const char *port)
 {
-#if 0
-  struct hostent *srv_host;
-  struct sockaddr_in srv_addr;
-  int sock;
-
-  srv_host = gethostbyname(server);
-  if (srv_host == NULL) {
-    ssh_set_error("can't resolve server '%s'", server);
-    return -1;
-  }
-
-  memset(&srv_addr, 0, sizeof(srv_addr));
-  srv_addr.sin_family = AF_INET;
-  memcpy(&srv_addr.sin_addr.s_addr, srv_host->h_addr, srv_host->h_length);
-  srv_addr.sin_port = htons(port);
-#else
   struct addrinfo addr_hints;
   struct addrinfo *addr_result, *addr;
   int sock, ret;
   
   memset(&addr_hints, 0, sizeof(struct addrinfo));
-  addr_hints.ai_family = AF_UNSPEC;    /* Allow IPv4 or IPv6 */
-  addr_hints.ai_socktype = SOCK_STREAM; /* Datagram socket */
+  addr_hints.ai_family = AF_UNSPEC;    /* IPv4 or IPv6 */
+  addr_hints.ai_socktype = SOCK_STREAM;
   addr_hints.ai_flags = 0;
-  addr_hints.ai_protocol = 0;          /* Any protocol */
+  addr_hints.ai_protocol = 0;
 
   ret = getaddrinfo(server, port, &addr_hints, &addr_result);
   if (ret != 0) {
-    ssh_set_error("getaddrinfo: %s", gai_strerror(ret));
+    ssh_set_error("can't resolve server '%s', port '%s': %s", server, port, gai_strerror(ret));
     return -1;
   }
-
-#endif
 
   sock = -1;
   for (addr = addr_result; addr != NULL; addr = addr->ai_next) {

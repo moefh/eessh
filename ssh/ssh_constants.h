@@ -38,6 +38,9 @@
 /* publickey USERAUTH */
 #define SSH_MSG_USERAUTH_PK_OK         60
 
+/* SSH_MSG_CHANNEL_EXTENDED_DATA data_type_code */
+#define SSH_EXTENDED_DATA_STDERR       1
+
 /* SSH_MSG_DISCONNECT reason codes */
 #define SSH_DISCONNECT_HOST_NOT_ALLOWED_TO_CONNECT          1
 #define SSH_DISCONNECT_PROTOCOL_ERROR                       2

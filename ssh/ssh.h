@@ -9,6 +9,7 @@
 #include "common/debug.h"
 #include "common/host_key_store.h"
 #include "ssh/connection.h"
+#include "ssh/ssh_constants.h"
 
 #define SSH_INIT_NO_SIGNALS (1<<0)
 

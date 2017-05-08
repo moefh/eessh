@@ -8,6 +8,30 @@
 #include "ssh/mac_i.h"
 #include "ssh/stream_i.h"
 
+#define SSH_CONN_MAX_CHANNELS 4
+
+struct SSH_CONN {
+  int sock;
+  struct SSH_STRING server_hostname;
+  struct SSH_VERSION_STRING client_version_string;
+  struct SSH_VERSION_STRING server_version_string;
+  struct SSH_STRING session_id;
+  struct SSH_STREAM in_stream;
+  struct SSH_STREAM out_stream;
+  struct SSH_BUF_READER last_pack_read;
+  struct SsH_CHANNEL *channels[SSH_CONN_MAX_CHANNELS];
+
+  ssh_conn_host_identity_checker server_identity_checker;
+
+  struct SSH_STRING username;
+  ssh_conn_password_reader password_reader;
+};
+
+enum SSH_CONN_DIRECTION {
+  SSH_CONN_CTS,
+  SSH_CONN_STC,
+};
+
 struct SSH_STRING ssh_conn_get_server_hostname(struct SSH_CONN *conn);
 struct SSH_STRING ssh_conn_get_username(struct SSH_CONN *conn);
 ssh_conn_password_reader ssh_conn_get_password_reader(struct SSH_CONN *conn);
