@@ -2,6 +2,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #include "ssh/stream_i.h"
 
@@ -15,12 +16,24 @@
 
 #define MIN(a,b) (((a) < (b)) ? (a) : (b))
 
-void ssh_stream_init(struct SSH_STREAM *stream)
+#define MAX_PACKET_LEN (128*1024)
+
+void ssh_stream_init(struct SSH_STREAM *stream, enum SSH_STREAM_TYPE type)
 {
   stream->seq_num = 0;
   stream->pack = ssh_buf_new();
-  stream->pack_enc = ssh_buf_new();
-  stream->net_buffer = ssh_buf_new();
+
+  stream->type = type;
+  switch (type) {
+  case SSH_STREAM_TYPE_WRITE:
+    stream->net.write.pack_enc = ssh_buf_new();
+    break;
+
+  case SSH_STREAM_TYPE_READ:
+    stream->net.read.buf = ssh_buf_new();
+    stream->net.read.buf_enc = ssh_buf_new();
+    break;
+  }
 
   stream->cipher_type = SSH_CIPHER_NONE;
   stream->cipher_block_len = 0;
@@ -37,9 +50,18 @@ void ssh_stream_close(struct SSH_STREAM *stream)
     ssh_cipher_free(stream->cipher_ctx);
   if (stream->mac_ctx != NULL)
     ssh_mac_free(stream->mac_ctx);
+
   ssh_buf_free(&stream->pack);
-  ssh_buf_free(&stream->pack_enc);
-  ssh_buf_free(&stream->net_buffer);
+  switch (stream->type) {
+  case SSH_STREAM_TYPE_WRITE:
+    ssh_buf_free(&stream->net.write.pack_enc);
+    break;
+    
+  case SSH_STREAM_TYPE_READ:
+    ssh_buf_free(&stream->net.read.buf);
+    ssh_buf_free(&stream->net.read.buf_enc);
+    break;
+  }
 }
 
 int ssh_stream_set_cipher(struct SSH_STREAM *stream, enum SSH_CIPHER_TYPE type, enum SSH_CIPHER_DIRECTION dir, struct SSH_STRING *iv, struct SSH_STRING *key)
@@ -81,16 +103,6 @@ int ssh_stream_set_mac(struct SSH_STREAM *stream, enum SSH_MAC_TYPE type, struct
   return 0;
 }
 
-struct SSH_BUFFER *ssh_stream_new_packet(struct SSH_STREAM *stream)
-{
-  ssh_buf_clear(&stream->pack);
-  
-  if (ssh_buf_write_u32(&stream->pack, 0) < 0     // pack_len
-      || ssh_buf_write_u8(&stream->pack, 0) < 0)  // pad_len
-    return NULL;
-  return &stream->pack;
-}
-
 static uint8_t calc_pad_len(uint32_t pack_len_before_padding, uint8_t block_size)
 {
   uint8_t pad_len;
@@ -106,8 +118,21 @@ static uint8_t calc_pad_len(uint32_t pack_len_before_padding, uint8_t block_size
 }
 
 /*
- * Prepare packet to write to the network
+ * ==================================================================
+ * write
+ * ==================================================================
  */
+
+struct SSH_BUFFER *ssh_stream_new_packet(struct SSH_STREAM *stream)
+{
+  ssh_buf_clear(&stream->pack);
+  
+  if (ssh_buf_write_u32(&stream->pack, 0) < 0     // pack_len
+      || ssh_buf_write_u8(&stream->pack, 0) < 0)  // pad_len
+    return NULL;
+  return &stream->pack;
+}
+
 static int finish_packet(struct SSH_STREAM *stream)
 {
   uint8_t pad_len;
@@ -126,8 +151,8 @@ static int finish_packet(struct SSH_STREAM *stream)
   stream->pack.data[4] = pad_len;
 
   if (stream->cipher_type != SSH_CIPHER_NONE) {
-    ssh_buf_clear(&stream->pack_enc);
-    if ((p = ssh_buf_get_write_pointer(&stream->pack_enc, stream->pack.len)) == NULL)
+    ssh_buf_clear(&stream->net.write.pack_enc);
+    if ((p = ssh_buf_get_write_pointer(&stream->net.write.pack_enc, stream->pack.len)) == NULL)
       return -1;
     if (ssh_cipher_crypt(stream->cipher_ctx, p, stream->pack.data, stream->pack.len) < 0)
       return -1;
@@ -135,7 +160,7 @@ static int finish_packet(struct SSH_STREAM *stream)
 
   // write mac past end of packet
   if (stream->mac_type != SSH_MAC_NONE) {
-    struct SSH_BUFFER *write_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->pack_enc;
+    struct SSH_BUFFER *write_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->net.write.pack_enc;
     if (ssh_buf_grow(write_pack, stream->mac_len) < 0)  // only grow buffer, don't change its nominal length
       return -1;
 
@@ -147,12 +172,9 @@ static int finish_packet(struct SSH_STREAM *stream)
   return 0;
 }
 
-/*
- * Write packet to network
- */
 int ssh_stream_send_packet(struct SSH_STREAM *stream, int sock)
 {
-  struct SSH_BUFFER *write_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->pack_enc;
+  struct SSH_BUFFER *write_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->net.write.pack_enc;
 
   if (finish_packet(stream) < 0)
     return -1;
@@ -164,8 +186,11 @@ int ssh_stream_send_packet(struct SSH_STREAM *stream, int sock)
 }
 
 /*
- * Verify packet just read from network
+ * ==================================================================
+ * read
+ * ==================================================================
  */
+
 static int verify_read_packet(struct SSH_STREAM *stream)
 {
   uint8_t block_len;
@@ -201,82 +226,120 @@ static int verify_read_packet(struct SSH_STREAM *stream)
   return 0;
 }
 
-// read data from buffer (if available) or network
-static int stream_recv_data(struct SSH_STREAM *stream, int sock, uint8_t *data, size_t data_len)
+/*
+ * Read data from network (decrypting if necessary) until there are
+ * 'len' bytes of unencrypted data available.
+ */
+static int stream_recv_fill_buffer(struct SSH_STREAM *stream, int sock, size_t ciphertext_len, size_t plaintext_len)
 {
-  if (stream->net_buffer.len > 0) {
-    size_t len_from_buffer = MIN(stream->net_buffer.len, data_len);
+  size_t total_len;
+  size_t read_len;
+  struct SSH_BUFFER *read_buf;
 
-    memcpy(data, stream->net_buffer.data, len_from_buffer);
-    if (ssh_buf_remove_data(&stream->net_buffer, 0, len_from_buffer) < 0)
-      return -1;
-    data += len_from_buffer;
-    data_len -= len_from_buffer;
+  total_len = ciphertext_len + plaintext_len;
+  
+  if (stream->cipher_type != SSH_CIPHER_NONE) {
+    read_buf = &stream->net.read.buf_enc;
+    if (total_len < stream->net.read.buf.len + read_buf->len)
+      read_len = 0;
+    else
+      read_len = total_len - stream->net.read.buf.len - read_buf->len;
+  } else {
+    read_buf = &stream->net.read.buf;
+    if (total_len < read_buf->len)
+      read_len = 0;
+    else
+      read_len = total_len - read_buf->len;
   }
 
-  if (data_len > 0) {
-    if (ssh_net_read_all(sock, data, data_len) < 0)
+  // read from network to fill 'read_buf' up to 'len' bytes
+  if (read_len > 0) {
+    ssize_t r;
+
+    // can't use ssh_buf_get_write_pointer() here because it's OK for the read to fail with EWOULDBLOCK
+    if (ssh_buf_grow(read_buf, read_len) < 0) {
+      errno = 0;
       return -1;
+    }
+    if ((r = ssh_net_read(sock, read_buf->data + read_buf->len, read_len)) < 0)
+      return -1;
+    read_buf->len += r;
   }
 
+  // decrypt data if cipher is set
+  if (stream->cipher_type != SSH_CIPHER_NONE && total_len > stream->net.read.buf.len) {
+    uint8_t *p;
+    size_t consume_len = total_len - stream->net.read.buf.len;
+
+    if (plaintext_len < consume_len) {
+      size_t dec_len = consume_len - plaintext_len;
+      
+      if ((p = ssh_buf_get_write_pointer(&stream->net.read.buf, dec_len)) == NULL
+          || ssh_cipher_crypt(stream->cipher_ctx, p, read_buf->data, dec_len) < 0) {
+        errno = 0;
+        return -1;
+      }
+    }
+    
+    if (consume_len > 0) {
+      size_t copy_len = MIN(consume_len, plaintext_len);
+
+      if ((p = ssh_buf_get_write_pointer(&stream->net.read.buf, copy_len)) == NULL) {
+        errno = 0;
+        return -1;
+      }
+      memcpy(p, read_buf->data + consume_len - copy_len, copy_len);
+    }
+    if (ssh_buf_remove_data(read_buf, 0, consume_len) < 0) {
+      errno = 0;
+      return -1;
+    }
+  }
+  
   return 0;
 }
 
-/*
- * Read packet from network
- */
 int ssh_stream_recv_packet(struct SSH_STREAM *stream, int sock)
 {
-  struct SSH_BUFFER *read_pack;
-  uint32_t first_block_len, remainder_len, pack_len;
-  uint8_t *p;
+  uint32_t pack_len;
+  size_t min_len, pack_data_len;
 
-  read_pack = (stream->cipher_type == SSH_CIPHER_NONE) ? &stream->pack : &stream->pack_enc;
-
-  // read first block to discover the packet length
-  first_block_len = (stream->cipher_block_len == 0) ? 8 : stream->cipher_block_len;
-  ssh_buf_clear(read_pack);
-  if ((p = ssh_buf_get_write_pointer(read_pack, first_block_len)) == NULL)
-    return -1;
-  if (stream_recv_data(stream, sock, p, first_block_len) < 0)
+  // ensure we have enough to read the packet len
+  min_len = (stream->cipher_type == SSH_CIPHER_NONE) ? 4 : stream->cipher_block_len;
+  if (stream->net.read.buf.len < min_len
+      && stream_recv_fill_buffer(stream, sock, min_len, 0) < 0)
     return -1;
 
-  // decrypt first block
-  if (stream->cipher_type != SSH_CIPHER_NONE) {
-    ssh_buf_clear(&stream->pack);
-    if ((p = ssh_buf_get_write_pointer(&stream->pack, first_block_len)) == NULL)
-      return -1;
-    if (ssh_cipher_crypt(stream->cipher_ctx, p, read_pack->data, read_pack->len) < 0)
-      return -1;
-  }
-
-  // get packet length
-  pack_len = ssh_buf_get_u32(stream->pack.data);
-  if (pack_len == 0 || pack_len > 65536) {
+  // get packet len
+  pack_len = ssh_buf_get_u32(stream->net.read.buf.data);
+  if (pack_len < 12 || pack_len > MAX_PACKET_LEN) {
     ssh_set_error("invalid packet size (%u=0x%x)", pack_len, pack_len);
+    errno = 0;
     return -1;
   }
 
   // read rest of the packet
-  remainder_len = pack_len + stream->mac_len - first_block_len + 4;
-  if ((p = ssh_buf_get_write_pointer(read_pack, remainder_len)) == NULL)
+  pack_data_len = pack_len + 4;
+  if (stream_recv_fill_buffer(stream, sock, pack_data_len, stream->mac_len) < 0)
     return -1;
-  if (stream_recv_data(stream, sock, p, remainder_len) < 0)
+
+  // return the packet
+  ssh_buf_clear(&stream->pack);
+  if (ssh_buf_append_data(&stream->pack, stream->net.read.buf.data, pack_data_len) < 0
+      || ssh_buf_grow(&stream->pack, stream->mac_len) < 0) {
+    errno = 0;
     return -1;
-  read_pack->len = pack_len + 4;
-  
-  // decrypt rest of the packet (excluding mac)
-  if (stream->cipher_type != SSH_CIPHER_NONE) {
-    if ((p = ssh_buf_get_write_pointer(&stream->pack, remainder_len - stream->mac_len)) == NULL)
-      return -1;
-    if (ssh_cipher_crypt(stream->cipher_ctx, p, read_pack->data + first_block_len, remainder_len - stream->mac_len) < 0)
-      return -1;
-    memcpy(stream->pack.data + pack_len + 4, read_pack->data + pack_len + 4, stream->mac_len);
-    stream->pack.len = pack_len + 4;
+  }
+  memcpy(stream->pack.data + stream->pack.len, stream->net.read.buf.data + pack_data_len, stream->mac_len);
+  if (ssh_buf_remove_data(&stream->net.read.buf, 0, pack_data_len + stream->mac_len) < 0) {
+    errno = 0;
+    return -1;
   }
   
-  if (verify_read_packet(stream) < 0)
+  if (verify_read_packet(stream) < 0) {
+    errno = 0;
     return -1;
+  }
   
   stream->seq_num++;
   return 0;

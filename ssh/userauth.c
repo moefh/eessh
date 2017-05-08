@@ -18,7 +18,7 @@
 #include "ssh/ssh_constants.h"
 
 #if !DEBUG_USERAUTH
-#include "disable_debug.h"
+#include "common/disable_debug_i.h"
 #endif
 
 #define MAX_PASSWORD_TRIES 3

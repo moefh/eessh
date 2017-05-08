@@ -38,8 +38,8 @@ static struct SSH_CONN *conn_new(void)
   conn->server_version_string.len = 0;
   conn->server_hostname = ssh_str_new_empty();
   conn->session_id = ssh_str_new_empty();
-  ssh_stream_init(&conn->in_stream);
-  ssh_stream_init(&conn->out_stream);
+  ssh_stream_init(&conn->in_stream, SSH_STREAM_TYPE_READ);
+  ssh_stream_init(&conn->out_stream, SSH_STREAM_TYPE_WRITE);
   
   conn->server_identity_checker = NULL;
 
@@ -155,7 +155,7 @@ static int conn_setup(struct SSH_CONN *conn)
     return -1;
 
   server_version = &conn->server_version_string;
-  if (ssh_version_string_read(server_version, conn->sock, &conn->in_stream.net_buffer) < 0)
+  if (ssh_version_string_read(server_version, conn->sock, &conn->in_stream.net.read.buf) < 0)
     return -1;
   
   ssh_log("* got server version '%.*s'\n", (int) server_version->version.len, server_version->version.str);

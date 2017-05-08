@@ -9,11 +9,29 @@
 
 #include <stdint.h>
 
+enum SSH_STREAM_TYPE {
+  SSH_STREAM_TYPE_READ,
+  SSH_STREAM_TYPE_WRITE
+};
+
+struct SSH_STREAM_WRITE_DATA {
+  struct SSH_BUFFER pack_enc;
+};
+
+struct SSH_STREAM_READ_DATA {
+  struct SSH_BUFFER buf;
+  struct SSH_BUFFER buf_enc;
+};
+
 struct SSH_STREAM {
   uint32_t seq_num;
   struct SSH_BUFFER pack;
-  struct SSH_BUFFER pack_enc;
-  struct SSH_BUFFER net_buffer;
+
+  enum SSH_STREAM_TYPE type;
+  union {
+    struct SSH_STREAM_WRITE_DATA write;
+    struct SSH_STREAM_READ_DATA read;
+  } net;
   
   enum SSH_CIPHER_TYPE cipher_type;
   struct SSH_CIPHER_CTX *cipher_ctx;
@@ -24,7 +42,7 @@ struct SSH_STREAM {
   uint32_t mac_len;
 };
 
-void ssh_stream_init(struct SSH_STREAM *stream);
+void ssh_stream_init(struct SSH_STREAM *stream, enum SSH_STREAM_TYPE type);
 void ssh_stream_close(struct SSH_STREAM *stream);
 
 int ssh_stream_set_cipher(struct SSH_STREAM *stream, enum SSH_CIPHER_TYPE type, enum SSH_CIPHER_DIRECTION dir, struct SSH_STRING *iv, struct SSH_STRING *key);

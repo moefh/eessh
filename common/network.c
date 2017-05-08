@@ -1,8 +1,9 @@
 /* network.c */
 
 #include <stdlib.h>
-#include <unistd.h>
+#include <limits.h>
 #include <string.h>
+#include <unistd.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -87,29 +88,33 @@ int ssh_net_write_all(int sock, const void *data, size_t len)
   return 0;
 }
 
-ssize_t ssh_net_read(int sock, void *data, size_t max_len)
+ssize_t ssh_net_read(int sock, void *data, size_t len)
 {
-  while (1) {
-    ssize_t ret = read(sock, data, max_len);
-    if (ret < 0 && errno == EINTR)
-      continue;
-    //dump_mem(data, ret, "**************** READ ***********************************");
-    return ret;
+  ssize_t len_left;
+
+  if (len > SSIZE_MAX) {
+    ssh_set_error("read too large");
+    errno = 0;
+    return -1;
   }
-}
 
-int ssh_net_read_all(int sock, void *data, size_t len)
-{
-  size_t cur = 0;
-
-  while (cur < len) {
-    ssize_t s = ssh_net_read(sock, (char *) data + cur, len - cur);
-    if (s <= 0) {
+  len_left = len;
+  while (len_left > 0) {
+    ssize_t ret = read(sock, data, len_left);
+    if (ret < 0) {
+      if (errno == EINTR)
+        continue;
+      if (errno == EWOULDBLOCK || errno == EAGAIN)
+        return len - len_left;
       ssh_set_error("read error");
       return -1;
     }
-    cur += s;
+    if (ret == 0) {
+      ssh_set_error("connection closed");
+      return -1;
+    }
+    data += ret;
+    len_left -= ret;
   }
-
-  return 0;
+  return len;
 }
