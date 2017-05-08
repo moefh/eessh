@@ -86,6 +86,8 @@ static int check_server_identity(const char *hostname, const struct SSH_STRING *
 
 static int sess_init(struct SSH_CHAN *chan)
 {
+  ssh_log("- init chan session\n");
+
   if (isatty(STDIN_FILENO)) {
     // TODO:
     // - set STDIN_FILENO to O_NONBLOCK
@@ -94,15 +96,23 @@ static int sess_init(struct SSH_CHAN *chan)
   }
   
   // we want to be notified when STDIN_FILENO has data available to read:
-  if (ssh_chan_watch_fd(chan, STDIN_FILENO, SSH_CHAN_FD_READ) < 0)
+  if (ssh_chan_watch_fd(chan, STDIN_FILENO, SSH_CHAN_FD_READ, 0) < 0)
     return -1;
   return 0;
 }
 
 static int sess_process_fd(struct SSH_CHAN *chan, int fd, uint8_t fd_flags)
 {
+  char data[1024];
+  
+  ssh_log("- processing fd %d with flags %d\n", fd, fd_flags);
+  
   if (fd == STDIN_FILENO) {
     // TODO: read() from fd, ssh_chan_send() data
+    if (fread(data, 1, sizeof(data), stdin) == 0 || feof(stdin) || ferror(stdin)) {
+      ssh_log("- stdin is closed, closing channel...\n");
+      ssh_chan_close(chan);
+    }
     return 0;
   }
 
@@ -118,7 +128,7 @@ static int sess_process_fd(struct SSH_CHAN *chan, int fd, uint8_t fd_flags)
     return 0;
   }
 
-  ssh_log("unexpected fd: %d\n", fd);
+  ssh_set_error("unexpected fd: %d", fd);
   return -1;
 }
 
@@ -133,8 +143,10 @@ static int sess_got_data(struct SSH_CHAN *chan, void *data, size_t data_len)
 
 static int sess_got_ext_data(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len)
 {
-  if (data_type_code != SSH_EXTENDED_DATA_STDERR)
-    ssh_log("WARNING: received ext data in unknown data_type_code=%u\n", data_type_code);
+  if (data_type_code != SSH_EXTENDED_DATA_STDERR) {
+    ssh_log("WARNING: ignoring received ext data in unknown data_type_code=%u\n", data_type_code);
+    return 0;
+  }
     
   // TODO:
   // - add data to stderr buffer

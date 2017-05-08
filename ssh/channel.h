@@ -40,7 +40,7 @@ struct SSH_CHAN_SESSION_CONFIG {
 };
 
 uint32_t ssh_chan_get_num(struct SSH_CHAN  *chan);
-int ssh_chan_watch_fd(struct SSH_CHAN  *chan, int fd, uint8_t fd_flags);
+int ssh_chan_watch_fd(struct SSH_CHAN  *chan, int fd, uint8_t enable_fd_flags, uint8_t disable_fd_flags);
 void ssh_chan_close(struct SSH_CHAN  *chan);
 ssize_t ssh_chan_send(struct SSH_CHAN *chan, void *data, size_t data_len);
 ssize_t ssh_chan_send_ext(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len);

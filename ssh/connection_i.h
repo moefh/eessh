@@ -19,7 +19,8 @@ struct SSH_CONN {
   struct SSH_STREAM in_stream;
   struct SSH_STREAM out_stream;
   struct SSH_BUF_READER last_pack_read;
-  struct SsH_CHANNEL *channels[SSH_CONN_MAX_CHANNELS];
+  int num_channels;
+  struct SSH_CHAN *channels[SSH_CONN_MAX_CHANNELS];
 
   ssh_conn_host_identity_checker server_identity_checker;
 
@@ -44,6 +45,8 @@ int ssh_conn_check_server_identity(struct SSH_CONN *conn, struct SSH_STRING *ser
 
 struct SSH_BUFFER *ssh_conn_new_packet(struct SSH_CONN *conn);
 int ssh_conn_send_packet(struct SSH_CONN *conn);
+int ssh_conn_send_is_pending(struct SSH_CONN *conn);
+int ssh_conn_send_flush(struct SSH_CONN *conn);
 
 struct SSH_BUF_READER *ssh_conn_recv_packet(struct SSH_CONN *conn);
 struct SSH_BUF_READER *ssh_conn_recv_packet_skip_ignore(struct SSH_CONN *conn);

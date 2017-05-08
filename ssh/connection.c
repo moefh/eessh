@@ -40,6 +40,8 @@ static struct SSH_CONN *conn_new(void)
   conn->session_id = ssh_str_new_empty();
   ssh_stream_init(&conn->in_stream, SSH_STREAM_TYPE_READ);
   ssh_stream_init(&conn->out_stream, SSH_STREAM_TYPE_WRITE);
+
+  conn->num_channels = 0;
   
   conn->server_identity_checker = NULL;
 
@@ -50,6 +52,9 @@ static struct SSH_CONN *conn_new(void)
 
 static void conn_free(struct SSH_CONN *conn)
 {
+  while (conn->num_channels > 0)
+    ssh_chan_close(conn->channels[0]);
+
   ssh_stream_close(&conn->in_stream);
   ssh_stream_close(&conn->out_stream);
   ssh_str_free(&conn->session_id);
@@ -150,8 +155,8 @@ static int conn_setup(struct SSH_CONN *conn)
 {
   struct SSH_VERSION_STRING *server_version;
 
-  if (ssh_net_write_all(conn->sock, conn->client_version_string.buf, conn->client_version_string.len) < 0
-      || ssh_net_write_all(conn->sock, "\r\n", 2) < 0)
+  if (ssh_net_write(conn->sock, conn->client_version_string.buf, conn->client_version_string.len) < 0
+      || ssh_net_write(conn->sock, "\r\n", 2) < 0)
     return -1;
 
   server_version = &conn->server_version_string;
@@ -262,6 +267,23 @@ int ssh_conn_send_packet(struct SSH_CONN *conn)
   return ssh_stream_send_packet(&conn->out_stream, conn->sock);
 }
 
+int ssh_conn_send_is_pending(struct SSH_CONN *conn)
+{
+  return ssh_stream_send_is_pending(&conn->out_stream);
+}
+
+int ssh_conn_send_flush(struct SSH_CONN *conn)
+{
+  return ssh_stream_send_flush(&conn->out_stream, conn->sock);
+}
+
+/*
+ * Read packet.
+ *
+ * Will fail with errno=EWOULDBLOCK if sock is non-blocking and
+ * there's no data to read, in which case it's OK to try again
+ * later.
+ */
 struct SSH_BUF_READER *ssh_conn_recv_packet(struct SSH_CONN *conn)
 {
   if (ssh_stream_recv_packet(&conn->in_stream, conn->sock) < 0)

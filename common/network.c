@@ -5,6 +5,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -13,6 +14,7 @@
 #include "common/network_i.h"
 
 #include "common/error.h"
+#include "common/debug.h"
 
 static int make_socket(int family, int socktype, int protocol)
 {
@@ -33,6 +35,34 @@ static int make_connection(int sock, const struct sockaddr *addr, socklen_t addr
     if (errno != EINTR)
       return -1;
   }
+}
+
+int ssh_net_set_sock_blocking(int sock, int block)
+{
+  int flags;
+
+  flags = fcntl(sock, F_GETFL);
+  if (flags < 0) {
+    ssh_set_error("fcntl(): can't read socket flags");
+    return -1;
+  }
+
+  if (block) {
+    if ((flags & O_NONBLOCK) == 0)
+      return 0; // already blocking
+    flags &= ~O_NONBLOCK;
+  } else {
+    if ((flags & O_NONBLOCK) != 0)
+      return 0; // already non-blocking
+    flags |= O_NONBLOCK;
+  }
+
+  if (fcntl(sock, F_SETFL, flags) < 0) {
+    ssh_set_error("fcntl(): can't set socket flags");
+    return -1;
+  }
+
+  return 0;
 }
 
 int ssh_net_connect(const char *server, const char *port)
@@ -70,27 +100,42 @@ int ssh_net_connect(const char *server, const char *port)
   return sock;
 }
 
-int ssh_net_write_all(int sock, const void *data, size_t len)
+ssize_t ssh_net_write(int sock, const void *data, size_t len)
 {
-  size_t cur = 0;
-  
-  while (cur < len) {
-    ssize_t s = write(sock, (char *) data + cur, len - cur);
-    if (s < 0 && errno == EINTR)
-      continue;
-    if (s <= 0) {
+  ssize_t len_left;
+  const uint8_t *p;
+
+  if (len > SSIZE_MAX) {
+    ssh_set_error("write too large");
+    errno = 0;
+    return -1;
+  }
+
+  p = data;
+  len_left = len;
+  while (len_left > 0) {
+    ssize_t s = write(sock, p, len_left);
+    if (s < 0) {
+      if (errno == EINTR)
+        continue;
+      if (errno == EWOULDBLOCK || errno == EAGAIN)
+        return len - len_left;
       ssh_set_error("write error");
       return -1;
     }
-    cur += s;
+    if (s == 0)
+      return len - len_left;
+    p += s;
+    len_left -= s;
   }
 
-  return 0;
+  return len;
 }
 
 ssize_t ssh_net_read(int sock, void *data, size_t len)
 {
   ssize_t len_left;
+  uint8_t *p;
 
   if (len > SSIZE_MAX) {
     ssh_set_error("read too large");
@@ -98,9 +143,10 @@ ssize_t ssh_net_read(int sock, void *data, size_t len)
     return -1;
   }
 
+  p = data;
   len_left = len;
   while (len_left > 0) {
-    ssize_t ret = read(sock, data, len_left);
+    ssize_t ret = read(sock, p, len_left);
     if (ret < 0) {
       if (errno == EINTR)
         continue;
@@ -113,7 +159,7 @@ ssize_t ssh_net_read(int sock, void *data, size_t len)
       ssh_set_error("connection closed");
       return -1;
     }
-    data += ret;
+    p += ret;
     len_left -= ret;
   }
   return len;

@@ -15,7 +15,7 @@ enum SSH_STREAM_TYPE {
 };
 
 struct SSH_STREAM_WRITE_DATA {
-  struct SSH_BUFFER pack_enc;
+  struct SSH_BUFFER buf_enc;
 };
 
 struct SSH_STREAM_READ_DATA {
@@ -48,9 +48,11 @@ void ssh_stream_close(struct SSH_STREAM *stream);
 int ssh_stream_set_cipher(struct SSH_STREAM *stream, enum SSH_CIPHER_TYPE type, enum SSH_CIPHER_DIRECTION dir, struct SSH_STRING *iv, struct SSH_STRING *key);
 int ssh_stream_set_mac(struct SSH_STREAM *stream, enum SSH_MAC_TYPE type, struct SSH_STRING *key);
 
-int ssh_stream_send_packet(struct SSH_STREAM *stream, int sock);
-int ssh_stream_recv_packet(struct SSH_STREAM *stream, int sock);
-
 struct SSH_BUFFER *ssh_stream_new_packet(struct SSH_STREAM *stream);
+int ssh_stream_send_packet(struct SSH_STREAM *stream, int sock);
+int ssh_stream_send_is_pending(struct SSH_STREAM *stream);
+int ssh_stream_send_flush(struct SSH_STREAM *stream, int sock);
+
+int ssh_stream_recv_packet(struct SSH_STREAM *stream, int sock);
 
 #endif /* STREAM_I_H_FILE */
