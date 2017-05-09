@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 enum SSH_CHAN_TYPE {
-  SSH_CHAN_SESSION,
+  SSH_CHAN_TYPE_SESSION,
 };
 
 struct SSH_CHAN;
@@ -16,20 +16,22 @@ struct SSH_CONN;
 #define SSH_CHAN_FD_WRITE (1<<1)
 #define SSH_CHAN_FD_CLOSE (1<<2)
 
-typedef int (*ssh_chan_created)(struct SSH_CHAN *chan, void *userdata);
-typedef void (*ssh_chan_closed)(struct SSH_CHAN *chan, void *userdata);
-typedef int (*ssh_chan_fd_ready)(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags);
-typedef int (*ssh_chan_received)(struct SSH_CHAN *chan, void *userdata, void *data, size_t data_len);
-typedef int (*ssh_chan_received_ext)(struct SSH_CHAN *chan, void *userdata, uint32_t data_type_code, void *data, size_t data_len);
+typedef int (*ssh_chan_fn_open)(struct SSH_CHAN *chan, void *userdata);
+typedef void (*ssh_chan_fn_open_failed)(struct SSH_CHAN *chan, void *userdata);
+typedef void (*ssh_chan_fn_closed)(struct SSH_CHAN *chan, void *userdata);
+typedef void (*ssh_chan_fn_fd_ready)(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags);
+typedef void (*ssh_chan_fn_received)(struct SSH_CHAN *chan, void *userdata, void *data, size_t data_len);
+typedef void (*ssh_chan_fn_received_ext)(struct SSH_CHAN *chan, void *userdata, uint32_t data_type_code, void *data, size_t data_len);
 
 struct SSH_CHAN_CONFIG {
   enum SSH_CHAN_TYPE type;
   void *userdata;
-  ssh_chan_created notify_created;
-  ssh_chan_closed notify_closed;
-  ssh_chan_fd_ready notify_fd_ready;
-  ssh_chan_received notify_received;
-  ssh_chan_received_ext notify_received_ext;
+  ssh_chan_fn_open notify_open;
+  ssh_chan_fn_open_failed notify_open_failed;
+  ssh_chan_fn_closed notify_closed;
+  ssh_chan_fn_fd_ready notify_fd_ready;
+  ssh_chan_fn_received notify_received;
+  ssh_chan_fn_received_ext notify_received_ext;
   void *type_config;
 };
 

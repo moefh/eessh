@@ -157,6 +157,7 @@ ssize_t ssh_net_read(int sock, void *data, size_t len)
     }
     if (ret == 0) {
       ssh_set_error("connection closed");
+      errno = 0;
       return -1;
     }
     p += ret;

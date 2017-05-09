@@ -69,14 +69,17 @@ static int sess_init(struct SSH_CHAN *chan, void *userdata)
 {
   struct SESS_DATA *sess = userdata;
   
-  ssh_log("- init channel session\n");
+  ssh_log("- channel session open\n");
 
   sess->stdin_buf = ssh_buf_new();
   sess->stdout_buf = ssh_buf_new();
   sess->stderr_buf = ssh_buf_new();
 
-  ssh_buf_append_cstring(&sess->stdout_buf, "If you can read this, the stdout buffer is working!\r\n");
-  ssh_buf_append_cstring(&sess->stderr_buf, "If you can read this, the stderr buffer is working!\r\n");
+  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
+  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
+  ssh_buf_append_cstring(&sess->stdout_buf, "==== Press CTRL+Q to quit =============================================\r\n");
+  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
+  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
   
   if (set_stdin_nonblock() < 0) {
     ssh_set_error("error setting STDIN to non-block");
@@ -97,11 +100,16 @@ static int sess_init(struct SSH_CHAN *chan, void *userdata)
   return 0;
 }
 
+static void sess_open_failed(struct SSH_CHAN *chan, void *userdata)
+{
+  ssh_log("- failed open channel\n");
+}
+
 static void sess_close(struct SSH_CHAN *data, void *userdata)
 {
   struct SESS_DATA *sess = userdata;
 
-  ssh_log("- closing channel session\n");
+  ssh_log("- channel session closed\n");
 
   ssh_buf_free(&sess->stdin_buf);
   ssh_buf_free(&sess->stdout_buf);
@@ -156,65 +164,81 @@ static int write_out_buffer(struct SSH_CHAN *chan, int out_fd, struct SSH_BUFFER
   return 0;
 }
 
-static int sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags)
+static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags)
 {
   struct SESS_DATA *sess = userdata;
 
-  ssh_log("- processing fd %d with flags %d\n", fd, fd_flags);
+  //ssh_log("- processing fd %d with flags %d\n", fd, fd_flags);
   
   if (fd == STDIN_FILENO) {
     int r = read_stdin(&sess->stdin_buf, 1024);
-    if (r < 0)
-      return -1;
-    if (r == 0 && (fd_flags & SSH_CHAN_FD_CLOSE) != 0) {
-      ssh_log("- stdin was closed, closing channel...\n");
+    if (r < 0) {
+      ssh_log("ERROR: %s\n", ssh_get_error());
       ssh_chan_close(chan);
-      return 0;
+      return;
+    }
+    if (r == 0 && (fd_flags & SSH_CHAN_FD_CLOSE) != 0) {
+      ssh_log("- stdin was closed, closing channel\n");
+      ssh_chan_close(chan);
+      return;
     }
     if (sess->stdin_buf.len > 0 && sess->stdin_buf.data[0] == 'Q' + 1 - 'A') {
-      ssh_log("- CTRL+Q detected, closing channel...\n");
+      ssh_log("- CTRL+Q detected, closing channel\n");
       ssh_chan_close(chan);
-      return 0;
+      return;
     }
-    if (ssh_chan_send(chan, sess->stdin_buf.data, sess->stdin_buf.len) < 0)
-      return -1;
+    if (ssh_chan_send(chan, sess->stdin_buf.data, sess->stdin_buf.len) < 0) {
+      ssh_log("ERROR: %s\n", ssh_get_error());
+      ssh_chan_close(chan);
+    }
     ssh_buf_clear(&sess->stdin_buf);
-    return 0;
+    return;
   }
 
-  if (fd == STDOUT_FILENO)
-    return write_out_buffer(chan, STDOUT_FILENO, &sess->stdout_buf);
+  if (fd == STDOUT_FILENO) {
+    if (write_out_buffer(chan, STDOUT_FILENO, &sess->stdout_buf) < 0) {
+      ssh_log("ERROR: %s\n", ssh_get_error());
+      ssh_chan_close(chan);
+    }
+    return;
+  }
+  
+  if (fd == STDERR_FILENO) {
+    if (write_out_buffer(chan, STDERR_FILENO, &sess->stderr_buf) < 0) {
+      ssh_log("ERROR: %s\n", ssh_get_error());
+      ssh_chan_close(chan);
+    }      
+    return;
+  }
 
-  if (fd == STDERR_FILENO)
-    return write_out_buffer(chan, STDERR_FILENO, &sess->stderr_buf);
-
-  ssh_set_error("unexpected fd: %d", fd);
-  return -1;
+  ssh_log("unexpected fd notification: %d\n", fd);
 }
 
-static int sess_got_data(struct SSH_CHAN *chan, void *userdata, void *data, size_t data_len)
+static void sess_got_data(struct SSH_CHAN *chan, void *userdata, void *data, size_t data_len)
 {
   struct SESS_DATA *sess = userdata;
 
   if (ssh_buf_append_data(&sess->stdout_buf, data, data_len) < 0
-      || write_out_buffer(chan, STDOUT_FILENO, &sess->stdout_buf) < 0)
-    return -1;
-  return 0;
+      || write_out_buffer(chan, STDOUT_FILENO, &sess->stdout_buf) < 0) {
+    ssh_log("ERROR: %s\n", ssh_get_error());
+    ssh_chan_close(chan);
+  }
 }
 
-static int sess_got_ext_data(struct SSH_CHAN *chan, void *userdata, uint32_t data_type_code, void *data, size_t data_len)
+static void sess_got_ext_data(struct SSH_CHAN *chan, void *userdata, uint32_t data_type_code, void *data, size_t data_len)
 {
   struct SESS_DATA *sess = userdata;
 
   if (data_type_code != SSH_EXTENDED_DATA_STDERR) {
     ssh_log("WARNING: ignoring received ext data in unknown data_type_code=%u\n", data_type_code);
-    return 0;
+    return;
   }
   
   if (ssh_buf_append_data(&sess->stderr_buf, data, data_len) < 0
-      || write_out_buffer(chan, STDERR_FILENO, &sess->stderr_buf) < 0)
-    return -1;
-  return 0;
+      || write_out_buffer(chan, STDERR_FILENO, &sess->stderr_buf) < 0) {
+    ssh_log("ERROR: %s\n", ssh_get_error());
+    ssh_chan_close(chan);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -351,8 +375,9 @@ int main(int argc, char **argv)
   conn_cfg.password_reader = read_password;
 
   // session info
-  chan_cfg.type = SSH_CHAN_SESSION;
-  chan_cfg.notify_created = sess_init;
+  chan_cfg.type = SSH_CHAN_TYPE_SESSION;
+  chan_cfg.notify_open = sess_init;
+  chan_cfg.notify_open_failed = sess_open_failed;
   chan_cfg.notify_closed = sess_close;
   chan_cfg.notify_fd_ready = sess_process_fd;
   chan_cfg.notify_received = sess_got_data;

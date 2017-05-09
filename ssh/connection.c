@@ -52,8 +52,10 @@ static struct SSH_CONN *conn_new(void)
 
 static void conn_free(struct SSH_CONN *conn)
 {
-  while (conn->num_channels > 0)
-    ssh_chan_close(conn->channels[0]);
+  int i;
+
+  for (i = 0; i < conn->num_channels; i++)
+    ssh_chan_free(conn->channels[i]);
 
   ssh_stream_close(&conn->in_stream);
   ssh_stream_close(&conn->out_stream);
@@ -65,6 +67,10 @@ static void conn_free(struct SSH_CONN *conn)
 
 void ssh_conn_close(struct SSH_CONN *conn)
 {
+  int i;
+  
+  for (i = 0; i < conn->num_channels; i++)
+    ssh_chan_close(conn->channels[i]);
   close(conn->sock);
   conn_free(conn);
 }
