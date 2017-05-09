@@ -1,24 +1,9 @@
 
-=== FUTURE DEVELOPMENT
+=== SHELL
 
-- Reply to global requests with SSH_MSG_REQUEST_FAILURE.
+- support terminal window change
 
-- Open channel for a SSH "session" [see https://tools.ietf.org/html/rfc4254#section-6.1].
-
-
-=== FIXES
-
-- Select algorithms based on client/server lists from their
-  SSH_MSG_KEXINIT messages.
-
-- Properly handle value 1 in 'first_kex_packet_follows' of received
-  SSH_MSG_KEXINIT message.
-
-
-=== IMPORTANT MISSING SECURITY FEATURES
-
-- In key exchange, verify that the server key belongs to the connected
-  server (and remember keys for known servers).
+=== CRYPTO
 
 - Support re-keying.
 
