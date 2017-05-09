@@ -15,6 +15,12 @@ void ssh_log(const char *fmt, ...)
   va_start(ap, fmt);
   vprintf(fmt, ap);
   va_end(ap);
+
+  // kludge for when logging in raw mode
+  if (strchr(fmt, '\n') != NULL) {
+    putchar('\r');
+    fflush(stdout);
+  }
 }
 
 void dump_string(const char *label, const struct SSH_STRING *str)

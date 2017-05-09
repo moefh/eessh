@@ -20,6 +20,7 @@
 
 struct SSH_CHAN {
   struct SSH_CONN *conn;
+  void *userdata;
   int closed;
   uint32_t local_num;
   uint32_t remote_num;
@@ -29,20 +30,34 @@ struct SSH_CHAN {
   nfds_t num_watch_fds;
 
   enum SSH_CHAN_TYPE type;
-  ssh_chan_created created;
-  ssh_chan_fd_ready fd_ready;
-  ssh_chan_received received;
-  ssh_chan_received_ext received_ext;
+  ssh_chan_created notify_created;
+  ssh_chan_closed notify_closed;
+  ssh_chan_fd_ready notify_fd_ready;
+  ssh_chan_received notify_received;
+  ssh_chan_received_ext notify_received_ext;
 };
 
-static short to_pollfd_events(int chan_fd_flags)
+static short chan_flags_to_pollfd_events(int chan_fd_flags)
 {
   short events = 0;
-  if ((chan_fd_flags & SSH_CHAN_FD_READ) != 0)
-    events |= POLLIN;
+  if ((chan_fd_flags & (SSH_CHAN_FD_READ|SSH_CHAN_FD_CLOSE)) != 0)
+    events |= POLLIN | POLLHUP;
   if ((chan_fd_flags & SSH_CHAN_FD_WRITE) != 0)
     events |= POLLOUT;
   return events;
+}
+
+static int pollfd_events_to_chan_flags(short pollfd_events)
+{
+  int flags = 0;
+  
+  if ((pollfd_events & (POLLIN|POLLPRI)) != 0)
+    flags |= SSH_CHAN_FD_READ;
+  if ((pollfd_events & POLLHUP) != 0)
+    flags |= SSH_CHAN_FD_CLOSE;
+  if ((pollfd_events & (POLLOUT|POLLWRBAND)) != 0)
+    flags |= SSH_CHAN_FD_WRITE;
+  return flags;
 }
 
 static int update_poll_fd_events(struct pollfd *poll_fds, nfds_t *num_poll_fds, int fd, short add_events, short remove_events)
@@ -84,6 +99,7 @@ static struct SSH_CHAN *chan_new(struct SSH_CONN *conn, const struct SSH_CHAN_CO
   if ((chan = ssh_alloc(sizeof(struct SSH_CHAN))) == NULL)
     return NULL;
   chan->conn = conn;
+  chan->userdata = cfg->userdata;
   chan->closed = 0;
   
   chan->local_num = local_num;
@@ -93,10 +109,11 @@ static struct SSH_CHAN *chan_new(struct SSH_CONN *conn, const struct SSH_CHAN_CO
   chan->num_watch_fds = 0;
 
   chan->type = cfg->type;
-  chan->created = cfg->created;
-  chan->fd_ready = cfg->fd_ready;
-  chan->received = cfg->received;
-  chan->received_ext = cfg->received_ext;
+  chan->notify_created = cfg->notify_created;
+  chan->notify_closed = cfg->notify_closed;
+  chan->notify_fd_ready = cfg->notify_fd_ready;
+  chan->notify_received = cfg->notify_received;
+  chan->notify_received_ext = cfg->notify_received_ext;
   
   conn->channels[conn->num_channels++] = chan;
   return chan;
@@ -119,6 +136,7 @@ static void chan_remove_closed_channels(struct SSH_CONN *conn)
   for (i = 0; i < conn->num_channels; ) {
     if (conn->channels[i]->closed) {
       struct SSH_CHAN *free_chan = conn->channels[i];
+      free_chan->notify_closed(free_chan, free_chan->userdata);
       memmove(&conn->channels[i], &conn->channels[i+1], (conn->num_channels-i-1) * sizeof(struct SSH_CHANNEL *));
       conn->num_channels--;
       ssh_free(free_chan);
@@ -127,26 +145,30 @@ static void chan_remove_closed_channels(struct SSH_CONN *conn)
   }
 }
 
-ssize_t ssh_chan_send(struct SSH_CHAN *chan, void *data, size_t data_len)
+int ssh_chan_send(struct SSH_CHAN *chan, void *data, size_t data_len)
 {
-  ssh_set_error("ssh_chan_send() not implemented!");
-  return -1;
+  ssh_log("WARNING: ssh_chan_send() not implemented!\n");
+  dump_mem("data to send", data, data_len);
+  return 0;
 }
 
-ssize_t ssh_chan_send_ext(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len)
+int ssh_chan_send_ext(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len)
 {
-  ssh_set_error("ssh_chan_send_ext() not implemented!");
-  return -1;
+  ssh_log("WARNING: ssh_chan_send_ext() not implemented!\n");
+  dump_mem("ext data to send", data, data_len);
+  return 0;
 }
 
 int ssh_chan_watch_fd(struct SSH_CHAN  *chan, int fd, uint8_t enable_fd_flags, uint8_t disable_fd_flags)
 {
-  short enable_events = to_pollfd_events(enable_fd_flags);
-  short disable_events = to_pollfd_events(disable_fd_flags);
+  short enable_events = chan_flags_to_pollfd_events(enable_fd_flags);
+  short disable_events = chan_flags_to_pollfd_events(disable_fd_flags);
   int i;
 
+  //ssh_log("watch fd %d with events (%d,%d)\n", fd, enable_fd_flags, disable_fd_flags);
+  
   if (update_poll_fd_events(chan->watch_fds, &chan->num_watch_fds, fd, enable_events, disable_events) < 0) {
-    if (enable_fd_flags != 0) // no error if there's no space to add only disable_events
+    if (enable_events != 0) // no error if there's no space to add only disable_events
       return -1;
   }
 
@@ -185,9 +207,9 @@ static int chan_notify_channels_watch_fds(struct SSH_CONN *conn, struct pollfd *
   for (i = 0; i < conn->num_channels; i++) {
     struct SSH_CHAN *chan = conn->channels[i];
     for (j = 0; j < chan->num_watch_fds; j++) {
-      //ssh_log("channnel %d has watch for fd %d with events %d, got event %d\n", chan->local_num, chan->watch_fds[j].fd, chan->watch_fds[j].events, poll_fd->revents);
-      if (poll_fd->fd == chan->watch_fds[j].fd /* && (chan->watch_fds[j].events & poll_fd->revents) != 0 */) { // TODO: translate revents to fd_flags and call only if appropriate
-        if (chan->fd_ready(chan, poll_fd->fd, poll_fd->revents) < 0)
+      if (poll_fd->revents != 0 && poll_fd->fd == chan->watch_fds[j].fd) {
+        if (chan->notify_fd_ready(chan, chan->userdata, poll_fd->fd,
+                                  pollfd_events_to_chan_flags(poll_fd->revents)) < 0)
           return -1;
       }
     }
@@ -218,12 +240,15 @@ static int chan_loop(struct SSH_CONN *conn)
         update_poll_fd_events(poll_fds, &num_poll_fds, chan->watch_fds[j].fd, chan->watch_fds[j].events, 0);
     }
 
-    ssh_log("* polling %d fds\n", (int) num_poll_fds);
+    //ssh_log("* polling %d fds\n", (int) num_poll_fds);
+    //for (i = 0; i < num_poll_fds; i++) ssh_log(" -> fd %d with flags %d\n", poll_fds[i].fd, poll_fds[i].events);
     if (poll(poll_fds, num_poll_fds, -1) < 0) {
       if (errno == EINTR)
         continue;
       return -1;
     }
+    //ssh_log("* got poll result:\n");
+    //for (i = 0; i < num_poll_fds; i++) ssh_log(" -> fd %d has flags %d\n", poll_fds[i].fd, poll_fds[i].revents);
 
     if ((poll_fds[0].revents & POLLIN) != 0) {
       if (chan_process_packets(conn) < 0)
@@ -239,7 +264,17 @@ static int chan_loop(struct SSH_CONN *conn)
         return -1;
     }
   }
+
   return 0;
+}
+
+static void chan_close_all_channels(struct SSH_CONN *conn)
+{
+  int i;
+  
+  for (i = 0; i < conn->num_channels; i++)
+    ssh_chan_close(conn->channels[i]);
+  chan_remove_closed_channels(conn);
 }
 
 int ssh_chan_run_connection(struct SSH_CONN *conn, int num_channels, const struct SSH_CHAN_CONFIG *channel_cfgs)
@@ -251,11 +286,16 @@ int ssh_chan_run_connection(struct SSH_CONN *conn, int num_channels, const struc
     if (chan == NULL)
       return -1;
     // TODO: create remote channel
-    if (chan->created(chan) < 0)
+    if (chan->notify_created(chan, chan->userdata) < 0)
       return -1;
   }
   
-  if (ssh_net_set_sock_blocking(conn->sock, 0) < 0)
+  if (ssh_net_set_sock_blocking(conn->sock, 0) < 0
+      || chan_loop(conn) < 0) {
+    chan_close_all_channels(conn);
     return -1;
-  return chan_loop(conn);
+  }
+
+  chan_close_all_channels(conn);
+  return 0;
 }
