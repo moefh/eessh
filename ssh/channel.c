@@ -1,6 +1,7 @@
 /* channel.c */
 
 #include <stdlib.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
@@ -50,20 +51,20 @@ struct SSH_CHAN {
   ssh_chan_fn_received_ext notify_received_ext;
 };
 
-static const struct CHAN_TYPE_DATA {
+static const struct CHAN_TYPE_INFO {
   enum SSH_CHAN_TYPE type;
   const char *name;
-} chan_types[] = {
+} chan_type_table[] = {
   { SSH_CHAN_TYPE_SESSION, "session" },
 };
 
-static const struct CHAN_TYPE_DATA *chan_get_type_data(enum SSH_CHAN_TYPE type)
+static const struct CHAN_TYPE_INFO *chan_get_type_info(enum SSH_CHAN_TYPE type)
 {
   int i;
 
-  for (i = 0; i < sizeof(chan_types)/sizeof(chan_types[0]); i++)
-    if (chan_types[i].type == type)
-      return &chan_types[i];
+  for (i = 0; i < sizeof(chan_type_table)/sizeof(chan_type_table[0]); i++)
+    if (chan_type_table[i].type == type)
+      return &chan_type_table[i];
   ssh_set_error("unknown channel type %d", type);
   return NULL;
 }
@@ -198,18 +199,57 @@ static void chan_remove_closed_channels(struct SSH_CONN *conn)
   }
 }
 
-int ssh_chan_send(struct SSH_CHAN *chan, void *data, size_t data_len)
+ssize_t ssh_chan_send_data(struct SSH_CHAN *chan, void *data, size_t data_len)
 {
-  ssh_log("WARNING: ssh_chan_send() not implemented!\n");
-  dump_mem("data to send", data, data_len);
-  return 0;
+  struct SSH_BUFFER *pack;
+  size_t process_len = data_len;
+
+  if (process_len > chan->remote_window_size)
+    process_len = chan->remote_window_size;
+  if (process_len > chan->remote_max_packet_size)
+    process_len = chan->remote_max_packet_size;
+  if (process_len > SSIZE_MAX)
+    process_len = SSIZE_MAX;
+
+  if (process_len == 0)
+    return 0;
+  
+  if ((pack = ssh_conn_new_packet(chan->conn)) == NULL
+      || ssh_buf_write_u8(pack, SSH_MSG_CHANNEL_DATA) < 0
+      || ssh_buf_write_u32(pack, chan->remote_num) < 0
+      || ssh_buf_write_data(pack, data, process_len) < 0
+      || ssh_conn_send_packet(chan->conn) < 0)
+    return -1;
+
+  chan->remote_window_size -= process_len;
+  return process_len;
 }
 
-int ssh_chan_send_ext(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len)
+ssize_t ssh_chan_send_ext_data(struct SSH_CHAN *chan, uint32_t data_type_code, void *data, size_t data_len)
 {
-  ssh_log("WARNING: ssh_chan_send_ext() not implemented!\n");
-  dump_mem("ext data to send", data, data_len);
-  return 0;
+  struct SSH_BUFFER *pack;
+  size_t process_len = data_len;
+
+  if (process_len > chan->remote_window_size)
+    process_len = chan->remote_window_size;
+  if (process_len > chan->remote_max_packet_size)
+    process_len = chan->remote_max_packet_size;
+  if (process_len > SSIZE_MAX)
+    process_len = SSIZE_MAX;
+
+  if (process_len == 0)
+    return 0;
+  
+  if ((pack = ssh_conn_new_packet(chan->conn)) == NULL
+      || ssh_buf_write_u8(pack, SSH_MSG_CHANNEL_EXTENDED_DATA) < 0
+      || ssh_buf_write_u32(pack, chan->remote_num) < 0
+      || ssh_buf_write_u32(pack, data_type_code) < 0
+      || ssh_buf_write_data(pack, data, process_len) < 0
+      || ssh_conn_send_packet(chan->conn) < 0)
+    return -1;
+
+  chan->remote_window_size -= process_len;
+  return process_len;
 }
 
 int ssh_chan_watch_fd(struct SSH_CHAN  *chan, int fd, uint8_t enable_fd_flags, uint8_t disable_fd_flags)
@@ -276,17 +316,51 @@ static int chan_handle_global_request(struct SSH_CONN *conn, struct SSH_BUF_READ
 static int chan_send_channel_open(struct SSH_CONN *conn, struct SSH_CHAN *chan)
 {
   struct SSH_BUFFER *pack;
-  const struct CHAN_TYPE_DATA *type_data = chan_get_type_data(chan->type);
+  const struct CHAN_TYPE_INFO *type_info = chan_get_type_info(chan->type);
 
-  if (type_data == NULL
+  if (type_info == NULL
       || (pack = ssh_conn_new_packet(conn)) == NULL
       || ssh_buf_write_u8(pack, SSH_MSG_CHANNEL_OPEN) < 0
-      || ssh_buf_write_cstring(pack, type_data->name) < 0
+      || ssh_buf_write_cstring(pack, type_info->name) < 0
       || ssh_buf_write_u32(pack, chan->local_num) < 0
       || ssh_buf_write_u32(pack, chan->local_window_size) < 0
       || ssh_buf_write_u32(pack, chan->local_max_packet_size) < 0
       || ssh_conn_send_packet(conn) < 0)
     return -1;
+  return 0;
+}
+
+static int chan_check_adjust_local_window(struct SSH_CONN *conn, struct SSH_CHAN *chan, size_t len)
+{
+  uint32_t consume_len;
+
+  if (len > 0xffffffffu) {
+    ssh_log("WARNING: size too large in chan_check_adjust_window()");
+    consume_len = 0xffffffffu;
+  } else {
+    consume_len = (uint32_t) len;
+  }
+
+  if (chan->local_window_size < consume_len) {
+    ssh_log("WARNING: received data exceeds window size\n");
+    chan->local_window_size = 0;
+  } else {
+    chan->local_window_size -= consume_len;
+  }
+
+  if (chan->local_window_size < 1024) {
+    struct SSH_BUFFER *pack;
+    uint32_t bytes_to_add = 2*1024*1024 - chan->local_window_size;
+
+    //ssh_log("* adjusting local window size: +%u bytes\n", bytes_to_add);
+    if ((pack = ssh_conn_new_packet(conn)) == NULL
+        || ssh_buf_write_u8(pack, SSH_MSG_CHANNEL_WINDOW_ADJUST) < 0
+        || ssh_buf_write_u32(pack, chan->remote_num) < 0
+        || ssh_buf_write_u32(pack, bytes_to_add) < 0
+        || ssh_conn_send_packet(conn) < 0)
+      return -1;
+    chan->local_window_size += bytes_to_add;
+  }
   return 0;
 }
 
@@ -302,6 +376,22 @@ static int chan_process_channel_packet(struct SSH_CONN *conn, struct SSH_BUF_REA
     return -1;
 
   switch (pack_type) {
+  case SSH_MSG_CHANNEL_WINDOW_ADJUST:
+    {
+      uint32_t bytes_to_add;
+      
+      if (ssh_buf_read_u32(pack, &bytes_to_add) < 0)
+        return 1;
+      //ssh_log("* adjusting remote window size: +%u bytes\n", bytes_to_add);
+      if (chan->remote_window_size + bytes_to_add < chan->remote_window_size) {
+        ssh_log("remote window size overflow: %u + %u\n", chan->remote_window_size, bytes_to_add);
+        chan->remote_window_size = 0xffffffffu;
+      } else {
+        chan->remote_window_size += bytes_to_add;
+      }
+    }
+    break;
+
   case SSH_MSG_CHANNEL_OPEN_CONFIRMATION:
     if (ssh_buf_read_u32(pack, &chan->remote_num) < 0
         || ssh_buf_read_u32(pack, &chan->remote_window_size) < 0
@@ -313,29 +403,40 @@ static int chan_process_channel_packet(struct SSH_CONN *conn, struct SSH_BUF_REA
         struct SSH_CHAN_SESSION_CONFIG *cfg = chan->type_config;
         struct SSH_BUFFER *wpack;
 
-        // TODO: check cfg to see if the user really wants a pty
-        if ((wpack = ssh_conn_new_packet(conn)) == NULL
-            || ssh_buf_write_u8(wpack, SSH_MSG_CHANNEL_REQUEST) < 0
-            || ssh_buf_write_u32(wpack, chan->remote_num) < 0
-            || ssh_buf_write_cstring(wpack, "pty-req") < 0
-            || ssh_buf_write_u8(wpack, 0) < 0
-            || ssh_buf_write_cstring(wpack, cfg->term) < 0
-            || ssh_buf_write_u32(wpack, cfg->term_width) < 0
-            || ssh_buf_write_u32(wpack, cfg->term_height) < 0
-            || ssh_buf_write_u32(wpack, 0) < 0   // width pixels
-            || ssh_buf_write_u32(wpack, 0) < 0   // height pixels
-            || ssh_buf_write_cstring(wpack, "") < 0
-            || ssh_conn_send_packet(conn) < 0)
-          return -1;
+        if (cfg->alloc_pty) {
+          if ((wpack = ssh_conn_new_packet(conn)) == NULL
+              || ssh_buf_write_u8(wpack, SSH_MSG_CHANNEL_REQUEST) < 0
+              || ssh_buf_write_u32(wpack, chan->remote_num) < 0
+              || ssh_buf_write_cstring(wpack, "pty-req") < 0
+              || ssh_buf_write_u8(wpack, 0) < 0
+              || ssh_buf_write_cstring(wpack, cfg->term) < 0
+              || ssh_buf_write_u32(wpack, cfg->term_width) < 0
+              || ssh_buf_write_u32(wpack, cfg->term_height) < 0
+              || ssh_buf_write_u32(wpack, 0) < 0   // width pixels
+              || ssh_buf_write_u32(wpack, 0) < 0   // height pixels
+              || ssh_buf_write_cstring(wpack, "") < 0
+              || ssh_conn_send_packet(conn) < 0)
+            return -1;
+        }
 
-        // TODO: run command instead of shell if cfg->command is set
-        if ((wpack = ssh_conn_new_packet(conn)) == NULL
-            || ssh_buf_write_u8(wpack, SSH_MSG_CHANNEL_REQUEST) < 0
-            || ssh_buf_write_u32(wpack, chan->remote_num) < 0
-            || ssh_buf_write_cstring(wpack, "shell") < 0
-            || ssh_buf_write_u8(wpack, 1) < 0
-            || ssh_conn_send_packet(conn) < 0)
-          return -1;
+        if (cfg->run_command == NULL) {
+          if ((wpack = ssh_conn_new_packet(conn)) == NULL
+              || ssh_buf_write_u8(wpack, SSH_MSG_CHANNEL_REQUEST) < 0
+              || ssh_buf_write_u32(wpack, chan->remote_num) < 0
+              || ssh_buf_write_cstring(wpack, "shell") < 0
+              || ssh_buf_write_u8(wpack, 1) < 0
+              || ssh_conn_send_packet(conn) < 0)
+            return -1;
+        } else {
+          if ((wpack = ssh_conn_new_packet(conn)) == NULL
+              || ssh_buf_write_u8(wpack, SSH_MSG_CHANNEL_REQUEST) < 0
+              || ssh_buf_write_u32(wpack, chan->remote_num) < 0
+              || ssh_buf_write_cstring(wpack, "exec") < 0
+              || ssh_buf_write_u8(wpack, 1) < 0
+              || ssh_buf_write_cstring(wpack, cfg->run_command) < 0
+              || ssh_conn_send_packet(conn) < 0)
+            return -1;
+        }
       }
       break;
     default:
@@ -360,9 +461,19 @@ static int chan_process_channel_packet(struct SSH_CONN *conn, struct SSH_BUF_REA
       if (ssh_buf_read_string(pack, &data) < 0)
         return -1;
       chan->notify_received(chan, chan->userdata, data.str, data.len);
+      if (chan_check_adjust_local_window(conn, chan, data.len) < 0)
+        return -1;
     }
     break;
-    
+
+  case SSH_MSG_CHANNEL_EOF:
+    chan->notify_received(chan, chan->userdata, NULL, 0);
+    break;
+
+  case SSH_MSG_CHANNEL_CLOSE:
+    ssh_chan_close(chan);
+    break;
+
   default:
     dump_packet_reader("unhandled channel packet", pack, conn->in_stream.mac_len);
     break;
@@ -373,6 +484,8 @@ static int chan_process_channel_packet(struct SSH_CONN *conn, struct SSH_BUF_REA
 
 static int chan_process_packets(struct SSH_CONN *conn)
 {
+  uint8_t pack_type;
+  
   while (1) {
     struct SSH_BUF_READER *pack = ssh_conn_recv_packet(conn);
     if (pack == NULL) {
@@ -381,21 +494,22 @@ static int chan_process_packets(struct SSH_CONN *conn)
       return -1;
     }
 
-    switch (ssh_packet_get_type(pack)) {
+    pack_type = ssh_packet_get_type(pack);
+
+    // channel packet
+    if (pack_type >= 90 && pack_type <= 127) {
+      if (chan_process_channel_packet(conn, pack) < 0)
+        return -1;
+      continue;
+    }
+
+    // other types
+    switch (pack_type) {
     case SSH_MSG_GLOBAL_REQUEST:
       if (chan_handle_global_request(conn, pack) < 0)
         return -1;
       break;
 
-    case SSH_MSG_CHANNEL_OPEN_CONFIRMATION:
-    case SSH_MSG_CHANNEL_OPEN_FAILURE:
-    case SSH_MSG_CHANNEL_SUCCESS:
-    case SSH_MSG_CHANNEL_WINDOW_ADJUST:
-    case SSH_MSG_CHANNEL_DATA:
-      if (chan_process_channel_packet(conn, pack) < 0)
-        return -1;
-      break;
-      
     default:
       dump_packet_reader("received unknown packet", pack, conn->in_stream.mac_len);
       break;

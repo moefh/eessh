@@ -76,9 +76,7 @@ static int sess_init(struct SSH_CHAN *chan, void *userdata)
   sess->stderr_buf = ssh_buf_new();
 
   ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
-  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
   ssh_buf_append_cstring(&sess->stdout_buf, "==== Press CTRL+Q to quit =============================================\r\n");
-  ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
   ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
   
   if (set_stdin_nonblock() < 0) {
@@ -171,6 +169,7 @@ static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8
   //ssh_log("- processing fd %d with flags %d\n", fd, fd_flags);
   
   if (fd == STDIN_FILENO) {
+    ssize_t sent;
     int r = read_stdin(&sess->stdin_buf, 1024);
     if (r < 0) {
       ssh_log("ERROR: %s\n", ssh_get_error());
@@ -187,11 +186,11 @@ static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8
       ssh_chan_close(chan);
       return;
     }
-    if (ssh_chan_send(chan, sess->stdin_buf.data, sess->stdin_buf.len) < 0) {
+    if ((sent = ssh_chan_send_data(chan, sess->stdin_buf.data, sess->stdin_buf.len)) < 0) {
       ssh_log("ERROR: %s\n", ssh_get_error());
       ssh_chan_close(chan);
     }
-    ssh_buf_clear(&sess->stdin_buf);
+    ssh_buf_remove_data(&sess->stdin_buf, 0, sent);
     return;
   }
 
@@ -218,6 +217,9 @@ static void sess_got_data(struct SSH_CHAN *chan, void *userdata, void *data, siz
 {
   struct SESS_DATA *sess = userdata;
 
+  if (data_len == 0)
+    return;
+  
   if (ssh_buf_append_data(&sess->stdout_buf, data, data_len) < 0
       || write_out_buffer(chan, STDOUT_FILENO, &sess->stdout_buf) < 0) {
     ssh_log("ERROR: %s\n", ssh_get_error());
