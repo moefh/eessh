@@ -25,14 +25,12 @@ Done:
   lot of servers I've seen don't support some of those either (and no one
   seems to support `3des-cbc` anymore).
 
-- Password user authentication.
+- Password user authentication
 
-Planned:
+- Interactive session channel
 
-- Channels:
-  - basic framework for channels: multiple channels, handle window sizes, etc.
-  - `session` channel for interactive ssh
+Missing:
 
-- Re-keying
+- Key re-exchange
 
-- Public Key user authentication.
+- Public key user authentication
