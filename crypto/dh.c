@@ -43,7 +43,7 @@ int crypto_dh_compute_key(struct CRYPTO_DH *crypto_dh, struct SSH_STRING *ret_ke
 {
   DH *dh = GET_DH(crypto_dh);
   BIGNUM *bn_server_pubkey;
-  uint32_t len;
+  int len;
   uint8_t *key;
 
   bn_server_pubkey = BN_new();
@@ -56,7 +56,7 @@ int crypto_dh_compute_key(struct CRYPTO_DH *crypto_dh, struct SSH_STRING *ret_ke
     BN_clear_free(bn_server_pubkey);
     return -1;
   }
-  if (DH_compute_key(key+1, bn_server_pubkey, dh) != len) {
+  if ((len = DH_compute_key(key+1, bn_server_pubkey, dh)) < 0) {
     ssh_free(key);
     BN_clear_free(bn_server_pubkey);
     ssh_set_error("error computing key");
