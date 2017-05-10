@@ -1,9 +1,9 @@
 
 ### Shell
 
-- support terminal window size change
+- support terminal window size change (SIGWINCH)
 
-- transmit signals
+- transmit local signals
 
 - inform the client of remote program/shell exit code
 
@@ -15,7 +15,7 @@
 - Fix comparisons with `memcmp` to prevent timing attacks.
 
 
-# RFC compliance
+### RFC compliance
 
 - (maybe) support old algorithms still marked as REQUIRED by RFC 4253:
   - MAC:  `hmac-sha1` 

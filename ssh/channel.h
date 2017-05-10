@@ -13,6 +13,7 @@ enum SSH_CHAN_TYPE {
 struct SSH_CHAN;
 struct SSH_CONN;
 
+/* watch fd_flags */
 #define SSH_CHAN_FD_READ  (1<<0)
 #define SSH_CHAN_FD_WRITE (1<<1)
 #define SSH_CHAN_FD_CLOSE (1<<2)
