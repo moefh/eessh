@@ -53,3 +53,22 @@ What's missing:
 - Public key user authentication
 
 - Better terminal support
+
+
+### Code Organization
+
+The code is split into 4 directories:
+
+- `common/`: general functions for buffer manipulation, logging, etc.
+
+- `crypto/`: thin wrappers around OpenSSL crypto functions (so it's
+  easy to change to a different crypto library, or implement our own)
+
+- `ssh/`: the bulk of the ssh client, of particular note:
+  - transport layer (`connection.c`)
+  - key exchange (`kex.c`, `kex_dh.c`)
+  - server key verification (`pubkey.c`)
+  - user authentication (`userauth.c`)
+  - channel mechanism (`channel.c`)
+
+- `main/`: simple client that opens an interactive shell session

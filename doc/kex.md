@@ -53,8 +53,8 @@ verification is done in `ssh/pubkey.c`).
 4. The client also checks that `K_S` matches the previously-known
 identity of the server it meant to connect. This is left as a hook to
 be provided by the user of the code (see function
-`check_server_identity` in `main.c`), a basic facility to store and
-check host identities is provided in `common/host_key_store.c`.
+`check_server_identity` in `main/main.c`), a basic facility to store
+and check host identities is provided in `common/host_key_store.c`.
 
 Both parties now have `H` and `shared_secret`. This concludes the
 `kex_algorithm`-specific part of the key exchange.

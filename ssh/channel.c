@@ -333,11 +333,16 @@ static int chan_process_packets(struct SSH_CONN *conn)
       continue;
     }
 
-    // other types
+    // other packet types
     switch (pack_type) {
     case SSH_MSG_GLOBAL_REQUEST:
       if (chan_handle_global_request(conn, pack) < 0)
         return -1;
+      break;
+
+    case SSH_MSG_IGNORE:
+    case SSH_MSG_UNIMPLEMENTED:
+    case SSH_MSG_DEBUG:
       break;
 
     default:
