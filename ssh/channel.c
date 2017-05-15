@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 
 #include "ssh/channel_i.h"
 
