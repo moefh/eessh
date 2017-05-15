@@ -19,6 +19,8 @@
 #include "ssh/debug.h"
 #include "ssh/ssh_constants.h"
 
+static volatile sig_atomic_t signal_notified;
+
 typedef int (*chan_type_fn_opened)(struct SSH_CHAN *chan);
 typedef int (*chan_type_fn_process_packet)(struct SSH_CHAN *chan, struct SSH_BUF_READER *pack);
 
@@ -123,6 +125,7 @@ static struct SSH_CHAN *chan_new(struct SSH_CONN *conn, const struct SSH_CHAN_CO
   chan->notify_fd_ready = cfg->notify_fd_ready;
   chan->notify_received = cfg->notify_received;
   chan->notify_received_ext = cfg->notify_received_ext;
+  chan->notify_signal = cfg->notify_signal;
   
   conn->channels[conn->num_channels++] = chan;
   return chan;
@@ -352,7 +355,7 @@ static int chan_process_packets(struct SSH_CONN *conn)
   }
 }
 
-static void chan_notify_channels_watch_fds(struct SSH_CONN *conn, struct pollfd *poll_fd)
+static int chan_notify_channels_watch_fds(struct SSH_CONN *conn, struct pollfd *poll_fd)
 {
   int i, j;
 
@@ -360,11 +363,13 @@ static void chan_notify_channels_watch_fds(struct SSH_CONN *conn, struct pollfd 
     struct SSH_CHAN *chan = conn->channels[i];
     for (j = 0; j < chan->num_watch_fds; j++) {
       if (poll_fd->revents != 0 && poll_fd->fd == chan->watch_fds[j].fd) {
-        chan->notify_fd_ready(chan, chan->userdata, poll_fd->fd,
-                              pollfd_events_to_chan_flags(poll_fd->revents));
+        if (chan->notify_fd_ready(chan, chan->userdata, poll_fd->fd,
+                                  pollfd_events_to_chan_flags(poll_fd->revents)) < 0)
+          return -1;
       }
     }
   }
+  return 0;
 }
 
 static void chan_collect_channel_poll_fds(struct SSH_CHAN *chan, struct pollfd *ret_poll_fds, nfds_t *ret_num_poll_fds)
@@ -377,6 +382,23 @@ static void chan_collect_channel_poll_fds(struct SSH_CHAN *chan, struct pollfd *
   }
 }
 
+/*
+ * Handle signal notifications for a channel. Note that if a channel
+ * received multiple notifications, we'll only notify notify it once.
+ */
+static int chan_handle_signal_notification(struct SSH_CONN *conn)
+{
+  int i;
+  
+  signal_notified = 0;
+  for (i = 0; i < conn->num_channels; i++) {
+    struct SSH_CHAN *chan = conn->channels[i];
+    if (chan->notify_signal(chan, chan->userdata) < 0)
+      return -1;
+  }
+  return 0;
+}
+
 static int chan_loop(struct SSH_CONN *conn)
 {
   struct pollfd poll_fds[MAX_POLL_FDS];
@@ -387,6 +409,11 @@ static int chan_loop(struct SSH_CONN *conn)
     chan_remove_closed_channels(conn);
     if (conn->num_channels == 0)
       break;
+
+    if (signal_notified) {
+      if (chan_handle_signal_notification(conn) < 0)
+        return -1;
+    }
     
     poll_fds[0].fd = conn->sock;
     poll_fds[0].events = POLLIN;
@@ -414,8 +441,10 @@ static int chan_loop(struct SSH_CONN *conn)
         return -1;
     }
 
-    for (i = 1; i < num_poll_fds; i++)
-      chan_notify_channels_watch_fds(conn, &poll_fds[i]);
+    for (i = 1; i < num_poll_fds; i++) {
+      if (chan_notify_channels_watch_fds(conn, &poll_fds[i]) < 0)
+        return -1;
+    }
   }
 
   return 0;
@@ -460,6 +489,16 @@ int ssh_chan_run_connection(struct SSH_CONN *conn, int num_channels, const struc
 uint32_t ssh_chan_get_num(struct SSH_CHAN  *chan)
 {
   return chan->local_num;
+}
+
+/*
+ * This function is called from a signal handler; we just set a flag
+ * to be handled in chan_loop().  Note that the flag is global, so all
+ * connections and channels will be notified.
+ */
+void ssh_chan_notify_signal(void)
+{
+  signal_notified = 1;
 }
 
 ssize_t ssh_chan_send_data(struct SSH_CHAN *chan, void *data, size_t data_len)

@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/types.h>
 
 #include "main/session.h"
@@ -22,6 +23,14 @@ struct SESS_DATA {
 static struct SESS_DATA sess_data;
 static struct SSH_CHAN_SESSION_CONFIG chan_session_cfg;
 static struct SSH_CHAN_CONFIG chan_cfg;
+static volatile sig_atomic_t got_sigwinch;
+
+static void handle_sigwinch(int signum)
+{
+  got_sigwinch = 1;
+  ssh_chan_notify_signal();
+  signal(SIGWINCH, handle_sigwinch);
+}
 
 static int set_fd_nonblock(int fd)
 {
@@ -47,6 +56,12 @@ static int sess_init(struct SSH_CHAN *chan, void *userdata)
   sess->stdout_buf = ssh_buf_new();
   sess->stderr_buf = ssh_buf_new();
 
+  // we want to be notified when STDIN_FILENO has data available to read:
+  if (ssh_chan_watch_fd(chan, STDIN_FILENO, SSH_CHAN_FD_READ, 0) < 0
+      || ssh_chan_watch_fd(chan, STDOUT_FILENO, SSH_CHAN_FD_WRITE, 0) < 0
+      || ssh_chan_watch_fd(chan, STDERR_FILENO, SSH_CHAN_FD_WRITE, 0) < 0)
+    return -1;
+
   ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
   ssh_buf_append_cstring(&sess->stdout_buf, "==== Press CTRL+Q to quit =============================================\r\n");
   ssh_buf_append_cstring(&sess->stdout_buf, "=======================================================================\r\n");
@@ -62,13 +77,9 @@ static int sess_init(struct SSH_CHAN *chan, void *userdata)
       ssh_set_error("error in terminal setup");
       return -1;
     }
+    signal(SIGWINCH, handle_sigwinch);
   }
   
-  // we want to be notified when STDIN_FILENO has data available to read:
-  if (ssh_chan_watch_fd(chan, STDIN_FILENO, SSH_CHAN_FD_READ, 0) < 0
-      || ssh_chan_watch_fd(chan, STDOUT_FILENO, SSH_CHAN_FD_WRITE, 0) < 0
-      || ssh_chan_watch_fd(chan, STDERR_FILENO, SSH_CHAN_FD_WRITE, 0) < 0)
-    return -1;
   return 0;
 }
 
@@ -82,6 +93,7 @@ static void sess_close(struct SSH_CHAN *data, void *userdata)
   struct SESS_DATA *sess = userdata;
 
   ssh_log("- channel session closed\n");
+  signal(SIGWINCH, SIG_IGN);
 
   ssh_buf_free(&sess->stdin_buf);
   ssh_buf_free(&sess->stdout_buf);
@@ -136,7 +148,7 @@ static int write_out_buffer(struct SSH_CHAN *chan, int out_fd, struct SSH_BUFFER
   return 0;
 }
 
-static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags)
+static int sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8_t fd_flags)
 {
   struct SESS_DATA *sess = userdata;
 
@@ -148,24 +160,22 @@ static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8
     if (r < 0) {
       ssh_log("ERROR: %s\n", ssh_get_error());
       ssh_chan_close(chan);
-      return;
+      return 0;
     }
     if (r == 0 && (fd_flags & SSH_CHAN_FD_CLOSE) != 0) {
       ssh_log("- stdin was closed, closing channel\n");
       ssh_chan_close(chan);
-      return;
+      return 0;
     }
     if (sess->stdin_buf.len > 0 && sess->stdin_buf.data[0] == 'Q' + 1 - 'A') {
       ssh_log("- CTRL+Q detected, closing channel\n");
       ssh_chan_close(chan);
-      return;
+      return 0;
     }
-    if ((sent = ssh_chan_send_data(chan, sess->stdin_buf.data, sess->stdin_buf.len)) < 0) {
-      ssh_log("ERROR: %s\n", ssh_get_error());
-      ssh_chan_close(chan);
-    }
+    if ((sent = ssh_chan_send_data(chan, sess->stdin_buf.data, sess->stdin_buf.len)) < 0)
+      return -1;
     ssh_buf_remove_data(&sess->stdin_buf, 0, sent);
-    return;
+    return 0;
   }
 
   if (fd == STDOUT_FILENO) {
@@ -173,7 +183,7 @@ static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8
       ssh_log("ERROR: %s\n", ssh_get_error());
       ssh_chan_close(chan);
     }
-    return;
+    return 0;
   }
   
   if (fd == STDERR_FILENO) {
@@ -181,10 +191,11 @@ static void sess_process_fd(struct SSH_CHAN *chan, void *userdata, int fd, uint8
       ssh_log("ERROR: %s\n", ssh_get_error());
       ssh_chan_close(chan);
     }      
-    return;
+    return 0;
   }
 
   ssh_log("unexpected fd notification: %d\n", fd);
+  return 0;
 }
 
 static void sess_got_data(struct SSH_CHAN *chan, void *userdata, void *data, size_t data_len)
@@ -217,6 +228,22 @@ static void sess_got_ext_data(struct SSH_CHAN *chan, void *userdata, uint32_t da
   }
 }
 
+static int sess_got_signal(struct SSH_CHAN *chan, void *userdata)
+{
+  int term_width, term_height;
+
+  if (! got_sigwinch)
+    return 0;
+  got_sigwinch = 0;
+  
+  if (term_get_window_size(&term_width, &term_height) < 0) {
+    ssh_log("warning: can't get new terminal window size; ignoring");
+    return 0;
+  }
+
+  return ssh_chan_session_new_term_size(chan, term_width, term_height);
+}
+
 struct SSH_CHAN_CONFIG *get_session_channel_config(void)
 {
   int term_width, term_height;
@@ -233,6 +260,7 @@ struct SSH_CHAN_CONFIG *get_session_channel_config(void)
   chan_cfg.notify_fd_ready = sess_process_fd;
   chan_cfg.notify_received = sess_got_data;
   chan_cfg.notify_received_ext = sess_got_ext_data;
+  chan_cfg.notify_signal = sess_got_signal;
   chan_cfg.userdata = &sess_data;
   chan_cfg.type_config = &chan_session_cfg;
   chan_session_cfg.run_command = NULL;  // run default user shell

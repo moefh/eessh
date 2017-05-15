@@ -38,6 +38,7 @@ struct SSH_CHAN {
   ssh_chan_fn_fd_ready notify_fd_ready;
   ssh_chan_fn_received notify_received;
   ssh_chan_fn_received_ext notify_received_ext;
+  ssh_chan_fn_signal notify_signal;
 };
 
 int ssh_chan_run_connection(struct SSH_CONN *conn, int num_channels, const struct SSH_CHAN_CONFIG *channel_cfgs);
