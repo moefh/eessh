@@ -14,9 +14,9 @@ of running a remote login session.
 ### Current Status
 
 Opening a remote shell works, but with password authentication only.
-Terminal size is fixed at 80x25, and terminal support is minimal (we
-don't send any "encoded terminal modes" in the `pty-req` request), but
-it *seems* to work fine -- it seems good enough to run emacs remotely.
+Terminal support is minimal (we don't send any "encoded terminal modes"
+in the `pty-req` request), but it *seems* to work fine -- it's good
+enough to run emacs remotely.
 
 Details of what works, listed in order of completion:
 
@@ -67,7 +67,6 @@ The code is split into 4 directories:
 - `ssh/`: the bulk of the ssh client, of particular note:
   - transport layer (`connection.c`)
   - key exchange (`kex.c`, `kex_dh.c`)
-  - server key verification (`pubkey.c`)
   - user authentication (`userauth.c`)
   - channel mechanism (`channel.c`)
 
